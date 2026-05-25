@@ -1,0 +1,25 @@
+{
+  "name": "notifyflow-root",
+  "version": "1.0.0",
+  "description": "Production-inspired distributed event-driven B2B notification delivery platform",
+  "private": true,
+  "workspaces": [
+    "shared/*",
+    "services/*",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "bootstrap": "npm install",
+    "dev:gateway": "npm run dev --workspace=services/api-gateway",
+    "dev:ingestion": "npm run dev --workspace=services/event-ingestion",
+    "dev:pref-tmpl": "npm run dev --workspace=services/preference-template",
+    "dev:email": "npm run dev --workspace=services/email-worker",
+    "dev:sms": "npm run dev --workspace=services/sms-worker",
+    "dev:push": "npm run dev --workspace=services/push-worker",
+    "dev:analytics": "npm run dev --workspace=services/analytics-consumer",
+    "dev:frontend": "npm run dev --workspace=frontend"
+  }
+}
