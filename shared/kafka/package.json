@@ -1,0 +1,10 @@
+{
+  "name": "@notifyflow/kafka",
+  "version": "1.0.0",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "@notifyflow/logger": "^1.0.0"
+  }
+}

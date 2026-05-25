@@ -36,8 +36,8 @@ const logger = winston.createLogger({
     contextFormatter(),
     winston.format.json() // Strictly output as single-line JSON string
   ),
-  defaultMeta: { 
-    service: process.env.SERVICE_NAME || 'unnamed-service' 
+  defaultMeta: {
+    service: process.env.SERVICE_NAME || 'unnamed-service'
   },
   transports: [
     new winston.transports.Console()
