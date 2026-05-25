@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  # Relational Database for user preferences, templates, and logs
+  postgres:
+    image: postgres:15-alpine
+    container_name: notifyflow-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: notifyflow_user
+      POSTGRES_PASSWORD: notifyflow_secure_password
+      POSTGRES_DB: notifyflow_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  # Named persistent volume to retain database state across container lifecycles
+  postgres_data:
+    driver: local
