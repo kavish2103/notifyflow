@@ -35,9 +35,9 @@ function getRedisClient() {
   });
 
   client.on('error', (err) => {
-    logger.error('Redis client error occurred', { 
-      error: err.message, 
-      stack: err.stack 
+    logger.error('Redis client error occurred', {
+      error: err.message,
+      stack: err.stack
     });
   });
 
