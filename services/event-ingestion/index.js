@@ -1,3 +1,10 @@
+const path = require('path');
+// Load environment variables from central monorepo config
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
+// Enforce service identity BEFORE loading the logger to label all logs correctly
+process.env.SERVICE_NAME = 'event-ingestion-service';
+
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');

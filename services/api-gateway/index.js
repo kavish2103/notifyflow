@@ -7,7 +7,7 @@ process.env.SERVICE_NAME = 'api-gateway-service';
 
 const express = require('express');
 const cors = require('cors');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const { createProxyMiddleware, fixRequestBody } = require('http-proxy-middleware');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getRedisClient } = require('@notifyflow/redis');
 const { getDbPool } = require('./db');
@@ -55,13 +55,16 @@ app.use('/v1/events',
     target: process.env.INGESTION_SERVICE_URL || 'http://localhost:3002',
     changeOrigin: true,
     onProxyReq: (proxyReq, req) => {
-      // Propagate tenant identity and transaction correlation trace downstream to ingestion
+      // Propagate tenant identity and transaction correlation trace downstream first
       if (req.headers['x-tenant-id']) {
         proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
       }
       if (req.headers['x-correlation-id']) {
         proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
       }
+
+      // Restream body data LAST (writing body data flushes headers!)
+      fixRequestBody(proxyReq, req);
     }
   })
 );
@@ -77,13 +80,16 @@ app.use('/v1/preferences',
     target: process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003',
     changeOrigin: true,
     onProxyReq: (proxyReq, req) => {
-      // Propagate validated headers downstream
+      // Set custom headers first
       if (req.headers['x-tenant-id']) {
         proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
       }
       if (req.headers['x-correlation-id']) {
         proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
       }
+
+      // Restream body last
+      fixRequestBody(proxyReq, req);
     }
   })
 );
@@ -99,13 +105,16 @@ app.use('/v1/templates',
     target: process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003',
     changeOrigin: true,
     onProxyReq: (proxyReq, req) => {
-      // Propagate validated headers downstream
+      // Set custom headers first
       if (req.headers['x-tenant-id']) {
         proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
       }
       if (req.headers['x-correlation-id']) {
         proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
       }
+
+      // Restream body last
+      fixRequestBody(proxyReq, req);
     }
   })
 );
