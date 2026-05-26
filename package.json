@@ -13,6 +13,8 @@
   },
   "scripts": {
     "bootstrap": "npm install",
+    "db:migrate": "node run-migrations.js",
+    "db:rollback": "node run-migrations.js down",
     "dev:gateway": "npm run dev --workspace=services/api-gateway",
     "dev:ingestion": "npm run dev --workspace=services/event-ingestion",
     "dev:pref-tmpl": "npm run dev --workspace=services/preference-template",
@@ -21,5 +23,10 @@
     "dev:push": "npm run dev --workspace=services/push-worker",
     "dev:analytics": "npm run dev --workspace=services/analytics-consumer",
     "dev:frontend": "npm run dev --workspace=frontend"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5",
+    "node-pg-migrate": "^6.2.2",
+    "pg": "^8.11.3"
   }
 }
