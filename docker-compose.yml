@@ -15,7 +15,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # In-memory caching, rate-limiting, and deduplication store
+  redis:
+    image: redis:7-alpine
+    container_name: notifyflow-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
 volumes:
-  # Named persistent volume to retain database state across container lifecycles
+  # Named persistent volumes to retain database states across container lifecycles
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
