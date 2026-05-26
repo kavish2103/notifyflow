@@ -109,8 +109,8 @@ function authenticateJWT(req, res, next) {
     // Verify token cryptographic signature
     jwt.verify(token, JWT_SECRET, (err, decoded) => {
       if (err) {
-        logger.warn('Authentication rejected: Invalid JWT signature', { 
-          reason: err.message 
+        logger.warn('Authentication rejected: Invalid JWT signature', {
+          reason: err.message
         });
         return res.status(403).json({
           error: 'Forbidden',
@@ -119,18 +119,18 @@ function authenticateJWT(req, res, next) {
       }
 
       req.user = decoded; // Bind decoded identity payload
-      
+
       // If user session is scoped to a B2B tenant, propagate tenant ID downstream
       if (decoded.tenantId) {
         req.headers['x-tenant-id'] = decoded.tenantId;
       }
-      
+
       return next();
     });
 
   } catch (error) {
-    logger.error('JWT authentication process failed', { 
-      error: error.message 
+    logger.error('JWT authentication process failed', {
+      error: error.message
     });
     return res.status(500).json({
       error: 'InternalServerError',
