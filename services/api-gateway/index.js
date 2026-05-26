@@ -9,6 +9,7 @@ const express = require('express');
 const cors = require('cors');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getRedisClient } = require('@notifyflow/redis');
+const { getDbPool } = require('./db');
 
 const app = express();
 const PORT = process.env.GATEWAY_PORT || 3000;
@@ -40,7 +41,7 @@ let redisClient = null;
 
 /**
  * Asynchronous boot sequence.
- * Guarantees that Redis is online and fully authenticated before routing HTTP traffic.
+ * Guarantees that Redis and Postgres are online and fully authenticated before routing HTTP traffic.
  */
 async function bootstrap() {
   try {
@@ -52,7 +53,15 @@ async function bootstrap() {
     await redisClient.ping();
     logger.info('Redis connection verified successfully.');
 
-    // 2. Start Express Listener
+    // 2. Establish connection to PostgreSQL
+    logger.info('Initializing PostgreSQL connection pool...');
+    const dbPool = getDbPool();
+    const dbTimeResult = await dbPool.query('SELECT NOW()');
+    logger.info('PostgreSQL connection verified successfully.', {
+      dbServerTime: dbTimeResult.rows[0].now
+    });
+
+    // 3. Start Express Listener
     server = app.listen(PORT, () => {
       logger.info('API Gateway fully booted and listening', {
         port: PORT,
@@ -92,6 +101,19 @@ const shutdown = async (signal) => {
         error: err.message 
       });
     }
+  }
+
+  try {
+    const dbPool = getDbPool();
+    if (dbPool) {
+      logger.info('Closing PostgreSQL connection pool...');
+      await dbPool.end();
+      logger.info('PostgreSQL connection pool closed cleanly.');
+    }
+  } catch (err) {
+    logger.error('Error closing PostgreSQL database pool during shutdown', {
+      error: err.message
+    });
   }
 
   logger.info('Graceful shutdown completed. Process exiting.');
