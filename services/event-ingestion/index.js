@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getKafkaProducer, TOPICS } = require('@notifyflow/kafka');
 const { validateClientEvent } = require('@notifyflow/schemas');
+const { getRedisClient, KEYS } = require('@notifyflow/redis');
 
 const app = express();
 const PORT = process.env.INGESTION_PORT || 3002;
@@ -31,6 +32,7 @@ app.get('/health', (req, res) => {
 
 let server = null;
 let kafkaProducer = null;
+let redisClient = null;
 
 /**
  * POST /v1/events
@@ -38,12 +40,15 @@ let kafkaProducer = null;
  * enriches payloads with system tracking metadata, and streams onto Kafka.
  */
 app.post('/v1/events', async (req, res) => {
-  // Defensive guard: Reject if service is booting and Kafka is not active
-  if (!kafkaProducer) {
-    logger.error('Attempted to ingest event, but Kafka producer is offline');
+  // Defensive guard: Reject if service is booting and Kafka/Redis is not active
+  if (!kafkaProducer || !redisClient) {
+    logger.error('Attempted to ingest event, but downstream dependencies are offline', {
+      kafkaReady: !!kafkaProducer,
+      redisReady: !!redisClient
+    });
     return res.status(503).json({
       error: 'ServiceUnavailable',
-      message: 'Ingestion pipeline connection is offline. Please retry shortly.'
+      message: 'Ingestion pipeline connections are offline. Please retry shortly.'
     });
   }
 
@@ -63,7 +68,23 @@ app.post('/v1/events', async (req, res) => {
 
     const clientEvent = validationResult.data;
 
-    // 2. Extract correlation ID from headers or generate a trace ID
+    // 2. Ingestion-level Deduplication using Redis SETNX (NX option with 10-minute expiration)
+    const redisKey = KEYS.ingestDedup(clientEvent.clientEventId);
+    logger.debug('Evaluating event ingestion idempotency...', { redisKey });
+
+    const dedupResult = await redisClient.set(redisKey, '1', 'NX', 'EX', 600);
+    if (!dedupResult) {
+      logger.warn('Duplicate event ingestion attempted', {
+        clientEventId: clientEvent.clientEventId,
+        tenantId: clientEvent.tenantId
+      });
+      return res.status(409).json({
+        error: 'ConflictError',
+        message: `An event with clientEventId '${clientEvent.clientEventId}' has already been ingested within the last 10 minutes. Request aborted.`
+      });
+    }
+
+    // 3. Extract correlation ID from headers or generate a trace ID
     const rawCorrelationId = req.headers['x-correlation-id'] || `req-${crypto.randomUUID()}`;
     const correlationId = rawCorrelationId.startsWith('req-') ? rawCorrelationId : `req-${rawCorrelationId}`;
 
@@ -132,18 +153,24 @@ app.post('/v1/events', async (req, res) => {
 
 /**
  * Asynchronous Boot Sequence.
- * Establishes connection to backing engines (Kafka) before listening for HTTP traffic.
+ * Establishes connection to backing engines (Kafka and Redis) before listening for HTTP traffic.
  */
 async function bootstrap() {
   try {
     logger.info('Starting Event Ingestion boot sequence...');
 
-    // 1. Establish connection to Kafka Brokers
+    // 1. Establish connection to Redis with health ping check
+    logger.info('Initializing Redis client connection...');
+    redisClient = getRedisClient();
+    await redisClient.ping();
+    logger.info('Redis connection established and verified successfully.');
+
+    // 2. Establish connection to Kafka Brokers
     logger.info('Initializing Kafka Producer connection...');
     kafkaProducer = await getKafkaProducer();
     logger.info('Kafka connection established successfully.');
 
-    // 2. Bind and Boot Express Server
+    // 3. Bind and Boot Express Server
     server = app.listen(PORT, () => {
       logger.info(`Event Ingestion service fully booted and listening`, {
         port: PORT,
@@ -171,6 +198,18 @@ const shutdown = async (signal) => {
     logger.info('Closing Express HTTP server listener...');
     await new Promise((resolve) => server.close(resolve));
     logger.info('Express server listener closed.');
+  }
+
+  if (redisClient) {
+    logger.info('Disconnecting Redis client socket...');
+    try {
+      await redisClient.quit();
+      logger.info('Redis client socket disconnected cleanly.');
+    } catch (err) {
+      logger.error('Error disconnecting Redis client during shutdown', {
+        error: err.message
+      });
+    }
   }
 
   if (kafkaProducer) {
