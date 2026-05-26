@@ -1,14 +1,9 @@
-const path = require('path');
-// Dynamically resolve and load .env from the monorepo root
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
-
-// Enforce service identity BEFORE loading the logger to label all log statements
-process.env.SERVICE_NAME = 'event-ingestion-service';
-
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getKafkaProducer, TOPICS } = require('@notifyflow/kafka');
+const { validateClientEvent } = require('@notifyflow/schemas');
 
 const app = express();
 const PORT = process.env.INGESTION_PORT || 3002;
@@ -36,6 +31,104 @@ app.get('/health', (req, res) => {
 
 let server = null;
 let kafkaProducer = null;
+
+/**
+ * POST /v1/events
+ * Public ingestion channel for B2B tenants. Validates requests,
+ * enriches payloads with system tracking metadata, and streams onto Kafka.
+ */
+app.post('/v1/events', async (req, res) => {
+  // Defensive guard: Reject if service is booting and Kafka is not active
+  if (!kafkaProducer) {
+    logger.error('Attempted to ingest event, but Kafka producer is offline');
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Ingestion pipeline connection is offline. Please retry shortly.'
+    });
+  }
+
+  try {
+    // 1. Zod schema validation
+    const validationResult = validateClientEvent(req.body);
+    if (!validationResult.success) {
+      logger.warn('Incoming event failed schema validation checks', {
+        errors: validationResult.error.errors
+      });
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'The event payload failed standard schema validation.',
+        details: validationResult.error.errors
+      });
+    }
+
+    const clientEvent = validationResult.data;
+
+    // 2. Extract correlation ID from headers or generate a trace ID
+    const rawCorrelationId = req.headers['x-correlation-id'] || `req-${crypto.randomUUID()}`;
+    const correlationId = rawCorrelationId.startsWith('req-') ? rawCorrelationId : `req-${rawCorrelationId}`;
+
+    // 3. Enrich the transaction payload
+    const eventId = `evt-${crypto.randomUUID()}`;
+    const enrichedEvent = {
+      schemaVersion: '1.0',
+      eventId,
+      clientEventId: clientEvent.clientEventId,
+      tenantId: clientEvent.tenantId,
+      userId: clientEvent.userId,
+      eventType: clientEvent.eventType,
+      timestamp: new Date().toISOString(),
+      correlationId,
+      retryCount: 0,
+      payload: clientEvent.payload
+    };
+
+    // 4. Stream onto Kafka topic partitioned by userId to guarantee chronological delivery order
+    logger.info('Streaming enriched transaction event onto Kafka topic...', {
+      eventId,
+      eventType: enrichedEvent.eventType,
+      userId: enrichedEvent.userId,
+      correlationId
+    });
+
+    await kafkaProducer.send({
+      topic: TOPICS.EVENTS,
+      messages: [
+        {
+          key: enrichedEvent.userId, // Guarantees message ordering per user
+          value: JSON.stringify(enrichedEvent),
+          headers: {
+            correlationId: enrichedEvent.correlationId,
+            tenantId: enrichedEvent.tenantId
+          }
+        }
+      ]
+    });
+
+    logger.info('Transaction event successfully streamed to Kafka broker', {
+      eventId,
+      clientEventId: enrichedEvent.clientEventId,
+      correlationId
+    });
+
+    // 5. Instantly release the client with HTTP 202 Accepted
+    return res.status(202).json({
+      status: 'ACCEPTED',
+      message: 'Event has been successfully ingested and queued for delivery.',
+      eventId,
+      correlationId
+    });
+
+  } catch (error) {
+    logger.error('Critical failure processing ingestion event', {
+      error: error.message,
+      stack: error.stack
+    });
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'An unexpected failure occurred during event ingestion.'
+    });
+  }
+});
 
 /**
  * Asynchronous Boot Sequence.
@@ -86,8 +179,8 @@ const shutdown = async (signal) => {
       await kafkaProducer.disconnect();
       logger.info('Kafka Producer socket disconnected cleanly.');
     } catch (err) {
-      logger.error('Error disconnecting Kafka Producer during shutdown', { 
-        error: err.message 
+      logger.error('Error disconnecting Kafka Producer during shutdown', {
+        error: err.message
       });
     }
   }
