@@ -7,9 +7,12 @@ process.env.SERVICE_NAME = 'api-gateway-service';
 
 const express = require('express');
 const cors = require('cors');
+const { createProxyMiddleware } = require('http-proxy-middleware');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getRedisClient } = require('@notifyflow/redis');
 const { getDbPool } = require('./db');
+const { authenticateTenant, authenticateFlexible } = require('./auth');
+const { rateLimitTenant } = require('./rate-limiter');
 
 const app = express();
 const PORT = process.env.GATEWAY_PORT || 3000;
@@ -35,6 +38,77 @@ app.get('/health', (req, res) => {
     memoryUsage: process.memoryUsage()
   });
 });
+
+// ==============================================================================
+// REVERSE PROXY ROUTING LAYERS
+// ==============================================================================
+
+/**
+ * 1. Proxy Routing: Event Ingestion Service
+ * Route: POST /v1/events
+ * Security: Enforces strict B2B API key authentication and per-tenant rate limits in Redis.
+ */
+app.use('/v1/events',
+  authenticateTenant,
+  rateLimitTenant,
+  createProxyMiddleware({
+    target: process.env.INGESTION_SERVICE_URL || 'http://localhost:3002',
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      // Propagate tenant identity and transaction correlation trace downstream to ingestion
+      if (req.headers['x-tenant-id']) {
+        proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
+      }
+      if (req.headers['x-correlation-id']) {
+        proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
+      }
+    }
+  })
+);
+
+/**
+ * 2. Proxy Routing: Preference & Template Service (Preferences)
+ * Route: /v1/preferences
+ * Security: Flexible authentication (allows JWT Bearer or B2B API Key lookup)
+ */
+app.use('/v1/preferences',
+  authenticateFlexible,
+  createProxyMiddleware({
+    target: process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003',
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      // Propagate validated headers downstream
+      if (req.headers['x-tenant-id']) {
+        proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
+      }
+      if (req.headers['x-correlation-id']) {
+        proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
+      }
+    }
+  })
+);
+
+/**
+ * 3. Proxy Routing: Preference & Template Service (Templates)
+ * Route: /v1/templates
+ * Security: Flexible authentication (allows JWT Bearer or B2B API Key lookup)
+ */
+app.use('/v1/templates',
+  authenticateFlexible,
+  createProxyMiddleware({
+    target: process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003',
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      // Propagate validated headers downstream
+      if (req.headers['x-tenant-id']) {
+        proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
+      }
+      if (req.headers['x-correlation-id']) {
+        proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
+      }
+    }
+  })
+);
 
 let server = null;
 let redisClient = null;

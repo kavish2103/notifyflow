@@ -139,7 +139,24 @@ function authenticateJWT(req, res, next) {
   }
 }
 
+/**
+ * 3. Flexible Gateway Authentication Middleware
+ * Inspects incoming headers to dynamically route to API Key or JWT authentication.
+ * Used for shared endpoints (like preferences) accessible by both humans and B2B systems.
+ */
+function authenticateFlexible(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const apiKeyHeader = req.headers['x-api-key'];
+
+  if (apiKeyHeader || (authHeader && authHeader.startsWith('ApiKey '))) {
+    return authenticateTenant(req, res, next);
+  } else {
+    return authenticateJWT(req, res, next);
+  }
+}
+
 module.exports = {
   authenticateTenant,
-  authenticateJWT
+  authenticateJWT,
+  authenticateFlexible
 };
