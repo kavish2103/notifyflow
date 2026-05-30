@@ -65,6 +65,35 @@ function getMailTransporter() {
 }
 
 /**
+ * Inserts a transactional record into the PostgreSQL delivery_logs table.
+ */
+async function logDelivery({ eventId, tenantId, userId, eventType, status, errorMessage = null, retryCount = 0 }) {
+  try {
+    const query = `
+      INSERT INTO delivery_logs (event_id, tenant_id, user_id, channel, event_type, status, error_message, retry_count, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+    `;
+    await dbPool.query(query, [
+      eventId,
+      tenantId,
+      userId,
+      'email',
+      eventType,
+      status,
+      errorMessage,
+      retryCount
+    ]);
+    logger.info('Delivery log persisted in database successfully', { eventId, status });
+  } catch (err) {
+    logger.error('Failed to write transactional delivery log to database', {
+      error: err.message,
+      eventId,
+      status
+    });
+  }
+}
+
+/**
  * Asynchronous boot sequence for the Email Worker service.
  * Establishes a consumer connection and starts processing the main Kafka event stream.
  */
@@ -113,8 +142,10 @@ async function bootstrap() {
           key
         });
 
+        let payload = null;
+
         try {
-          const payload = JSON.parse(rawBody);
+          payload = JSON.parse(rawBody);
           logger.debug('Successfully parsed event payload', {
             eventId: payload.eventId,
             clientEventId: payload.clientEventId,
@@ -150,6 +181,15 @@ async function bootstrap() {
               userId: payload.userId,
               correlationId: payload.correlationId
             });
+
+            await logDelivery({
+              eventId: payload.eventId,
+              tenantId: payload.tenantId,
+              userId: payload.userId,
+              eventType: payload.eventType,
+              status: 'skipped',
+              errorMessage: 'User has opted out of email channel preferences'
+            });
             return;
           }
 
@@ -170,6 +210,15 @@ async function bootstrap() {
             logger.warn('Skipping email delivery: No email template found for event type', {
               eventType: payload.eventType,
               tenantId: payload.tenantId
+            });
+
+            await logDelivery({
+              eventId: payload.eventId,
+              tenantId: payload.tenantId,
+              userId: payload.userId,
+              eventType: payload.eventType,
+              status: 'skipped',
+              errorMessage: `No email template registered for event type '${payload.eventType}'`
             });
             return;
           }
@@ -214,6 +263,15 @@ async function bootstrap() {
               userId: payload.userId,
               eventType: payload.eventType
             });
+
+            await logDelivery({
+              eventId: payload.eventId,
+              tenantId: payload.tenantId,
+              userId: payload.userId,
+              eventType: payload.eventType,
+              status: 'skipped',
+              errorMessage: 'Recipient email address not found in database or event payload context'
+            });
             return;
           }
 
@@ -235,7 +293,13 @@ async function bootstrap() {
             recipient: recipientEmail
           });
 
-          // Step placeholder: In Part 28, we will build transactional logging!
+          await logDelivery({
+            eventId: payload.eventId,
+            tenantId: payload.tenantId,
+            userId: payload.userId,
+            eventType: payload.eventType,
+            status: 'delivered'
+          });
 
         } catch (err) {
           logger.error('Failed to process event or deliver email', {
@@ -243,6 +307,18 @@ async function bootstrap() {
             stack: err.stack,
             rawBody
           });
+
+          if (payload && payload.eventId) {
+            await logDelivery({
+              eventId: payload.eventId,
+              tenantId: payload.tenantId,
+              userId: payload.userId,
+              eventType: payload.eventType,
+              status: 'failed',
+              errorMessage: err.message,
+              retryCount: payload.retryCount || 0
+            });
+          }
         }
       }
     });
