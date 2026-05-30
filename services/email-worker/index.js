@@ -6,7 +6,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 process.env.SERVICE_NAME = 'email-worker-service';
 
 const { logger } = require('@notifyflow/logger');
-const { getKafkaClient, TOPICS, CONSUMER_GROUPS } = require('@notifyflow/kafka');
+const { getKafkaClient, getKafkaProducer, TOPICS, CONSUMER_GROUPS } = require('@notifyflow/kafka');
 
 const Handlebars = require('handlebars');
 
@@ -309,15 +309,75 @@ async function bootstrap() {
           });
 
           if (payload && payload.eventId) {
-            await logDelivery({
-              eventId: payload.eventId,
-              tenantId: payload.tenantId,
-              userId: payload.userId,
-              eventType: payload.eventType,
-              status: 'failed',
-              errorMessage: err.message,
-              retryCount: payload.retryCount || 0
-            });
+            const currentRetryCount = payload.retryCount || 0;
+
+            if (currentRetryCount < 3) {
+              const nextRetryCount = currentRetryCount + 1;
+              // Exponential backoff: 2s, 4s, 8s
+              const backoffDelayMs = Math.pow(2, nextRetryCount) * 1000;
+              const nextAttemptAt = new Date(Date.now() + backoffDelayMs).toISOString();
+
+              const retryEvent = {
+                ...payload,
+                retryCount: nextRetryCount,
+                nextAttemptAt
+              };
+
+              try {
+                // Publish retry envelope onto Kafka retry topic
+                const producer = await getKafkaProducer();
+                await producer.send({
+                  topic: TOPICS.RETRY,
+                  messages: [
+                    {
+                      key: payload.userId,
+                      value: JSON.stringify(retryEvent)
+                    }
+                  ]
+                });
+
+                logger.info('Enqueued event for retry delivery stream successfully', {
+                  eventId: payload.eventId,
+                  retryCount: nextRetryCount,
+                  backoffDelayMs,
+                  nextAttemptAt
+                });
+
+                // Write transactional failure log marked as retrying
+                await logDelivery({
+                  eventId: payload.eventId,
+                  tenantId: payload.tenantId,
+                  userId: payload.userId,
+                  eventType: payload.eventType,
+                  status: 'failed',
+                  errorMessage: `Attempt ${nextRetryCount} failed: ${err.message}. Enqueued for retry backoff delay.`,
+                  retryCount: nextRetryCount
+                });
+
+              } catch (prodErr) {
+                logger.error('Failed to publish event to Kafka retry stream', {
+                  error: prodErr.message,
+                  eventId: payload.eventId
+                });
+              }
+
+            } else {
+              // Retries fully exhausted (DLQ logic in future part)
+              logger.warn('Email worker retries fully exhausted for event', {
+                eventId: payload.eventId,
+                retryCount: currentRetryCount
+              });
+
+              await logDelivery({
+                eventId: payload.eventId,
+                tenantId: payload.tenantId,
+                userId: payload.userId,
+                eventType: payload.eventType,
+                status: 'failed',
+                errorMessage: `Retries exhausted: ${err.message}`,
+                retryCount: currentRetryCount
+              });
+            }
           }
         }
       }
