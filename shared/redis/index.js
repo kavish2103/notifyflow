@@ -71,9 +71,9 @@ const KEYS = {
 
   /**
    * Render template cached record.
-   * Format: tmpl:{eventType}:{channel}
+   * Format: tmpl:{tenantId}:{eventType}:{channel}
    */
-  template: (eventType, channel) => `tmpl:${eventType}:${channel}`,
+  template: (tenantId, eventType, channel) => `tmpl:${tenantId}:${eventType}:${channel}`,
 
   /**
    * Tenant api key/limit cached record.

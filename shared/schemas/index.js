@@ -94,6 +94,41 @@ const eventEnvelopeSchema = z.object({
 }).strict();
 
 /**
+ * 3. Update Preferences Schema: Validates channel state updates.
+ */
+const updatePreferencesSchema = z.object({
+  preferences: z.array(
+    z.object({
+      channel: z.enum(['email', 'sms', 'push'], {
+        required_error: "channel is required",
+        invalid_type_error: "channel must be one of 'email', 'sms', 'push'"
+      }),
+      optedIn: z.boolean({
+        required_error: "optedIn is required",
+        invalid_type_error: "optedIn must be a boolean"
+      })
+    })
+  ).min(1, "preferences list cannot be empty")
+}).strict();
+
+/**
+ * 4. Create Template Schema: Validates template body details.
+ */
+const createTemplateSchema = z.object({
+  eventType: z.string({
+    required_error: "eventType is required"
+  }).min(1, "eventType cannot be empty"),
+  channel: z.enum(['email', 'sms', 'push'], {
+    required_error: "channel is required",
+    invalid_type_error: "channel must be one of 'email', 'sms', 'push'"
+  }),
+  subjectTemplate: z.string().max(255).optional(),
+  bodyTemplate: z.string({
+    required_error: "bodyTemplate is required"
+  }).min(1, "bodyTemplate cannot be empty")
+}).strict();
+
+/**
  * Validates external requests entering the Ingestion API endpoint.
  * @param {object} data - Raw request body
  * @returns {object} Zod safeParse result
@@ -111,9 +146,31 @@ function validateEventEnvelope(data) {
   return eventEnvelopeSchema.safeParse(data);
 }
 
+/**
+ * Validates B2B client request to update user's channel preferences.
+ * @param {object} data - Preferences request body
+ * @returns {object} Zod safeParse result
+ */
+function validateUpdatePreferences(data) {
+  return updatePreferencesSchema.safeParse(data);
+}
+
+/**
+ * Validates B2B template create/update request payload.
+ * @param {object} data - Template payload
+ * @returns {object} Zod safeParse result
+ */
+function validateCreateTemplate(data) {
+  return createTemplateSchema.safeParse(data);
+}
+
 module.exports = {
   clientEventSchema,
   eventEnvelopeSchema,
+  updatePreferencesSchema,
+  createTemplateSchema,
   validateClientEvent,
-  validateEventEnvelope
+  validateEventEnvelope,
+  validateUpdatePreferences,
+  validateCreateTemplate
 };
