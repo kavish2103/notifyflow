@@ -8,6 +8,8 @@ process.env.SERVICE_NAME = 'email-worker-service';
 const { logger } = require('@notifyflow/logger');
 const { getKafkaClient, TOPICS, CONSUMER_GROUPS } = require('@notifyflow/kafka');
 
+const Handlebars = require('handlebars');
+
 let kafkaConsumer = null;
 
 /**
@@ -62,10 +64,85 @@ async function bootstrap() {
             userId: payload.userId
           });
           
-          // Step placeholder: In subsequent parts, we will call preferences, fetch templates, and send email!
+          // 1. Verify User Preferences for Email
+          const prefServiceUrl = process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003';
+          logger.info('Checking user preferences for email channel...', { 
+            userId: payload.userId, 
+            url: `${prefServiceUrl}/v1/preferences/${payload.userId}` 
+          });
+
+          const prefRes = await fetch(`${prefServiceUrl}/v1/preferences/${payload.userId}`, {
+            headers: {
+              'x-tenant-id': payload.tenantId,
+              'x-correlation-id': payload.correlationId
+            }
+          });
+
+          if (!prefRes.ok) {
+            throw new Error(`Failed to fetch user preferences: status ${prefRes.status}`);
+          }
+
+          const prefData = await prefRes.json();
+          const emailPref = prefData.preferences.find(p => p.channel === 'email');
+          const isOptedIn = emailPref ? emailPref.optedIn : true;
+
+          if (!isOptedIn) {
+            logger.info('Skipping email delivery: User is opted out', {
+              userId: payload.userId,
+              correlationId: payload.correlationId
+            });
+            return;
+          }
+
+          // 2. Fetch specific Email template from port 3003
+          logger.info('Fetching email template configured for event...', {
+            eventType: payload.eventType,
+            url: `${prefServiceUrl}/v1/templates/${payload.eventType}/email`
+          });
+
+          const tmplRes = await fetch(`${prefServiceUrl}/v1/templates/${payload.eventType}/email`, {
+            headers: {
+              'x-tenant-id': payload.tenantId,
+              'x-correlation-id': payload.correlationId
+            }
+          });
+
+          if (tmplRes.status === 404) {
+            logger.warn('Skipping email delivery: No email template found for event type', {
+              eventType: payload.eventType,
+              tenantId: payload.tenantId
+            });
+            return;
+          }
+
+          if (!tmplRes.ok) {
+            throw new Error(`Failed to fetch email template: status ${tmplRes.status}`);
+          }
+
+          const tmplData = await tmplRes.json();
+          const { subjectTemplate, bodyTemplate } = tmplData;
+
+          // 3. Compile and Render Dynamic Handlebars Templates
+          const compileSubject = Handlebars.compile(subjectTemplate || '');
+          const compileBody = Handlebars.compile(bodyTemplate);
+
+          const renderedSubject = compileSubject(payload.payload || {});
+          const renderedBody = compileBody(payload.payload || {});
+
+          logger.info('Email templates successfully rendered dynamically', {
+            userId: payload.userId,
+            eventType: payload.eventType,
+            renderedSubject,
+            renderedBodyLength: renderedBody.length,
+            renderedBodyPreview: renderedBody.substring(0, 100) + '...'
+          });
+
+          // Step placeholder: In Part 27, we will configure Nodemailer and send the email!
+
         } catch (err) {
-          logger.error('Failed to parse event JSON structure', {
+          logger.error('Failed to process event or compile templates', {
             error: err.message,
+            stack: err.stack,
             rawBody
           });
         }
