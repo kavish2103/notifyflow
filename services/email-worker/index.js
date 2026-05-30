@@ -10,7 +10,59 @@ const { getKafkaClient, TOPICS, CONSUMER_GROUPS } = require('@notifyflow/kafka')
 
 const Handlebars = require('handlebars');
 
+const { getDbPool } = require('./db');
+const nodemailer = require('nodemailer');
+
 let kafkaConsumer = null;
+let mailTransporter = null;
+let dbPool = null;
+
+/**
+ * Returns the configured Nodemailer client transport (Singleton).
+ * Cascades resiliently to a simulated Mock transporter if SMTP credentials are left at default values.
+ */
+function getMailTransporter() {
+  if (mailTransporter) {
+    return mailTransporter;
+  }
+
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || '2525');
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  // Detect unconfigured or default values to fallback to a simulated local trace
+  const isMock = !user || user.includes('your_mailtrap_smtp_username');
+
+  if (isMock) {
+    logger.info('Using MOCK email delivery transporter (SMTP credentials not configured)');
+    mailTransporter = {
+      sendMail: async (mailOptions) => {
+        logger.info('=== [MOCK EMAIL SENT SUCCESSFULLY] ===', {
+          to: mailOptions.to,
+          from: mailOptions.from,
+          subject: mailOptions.subject,
+          bodyLength: mailOptions.text.length,
+          preview: mailOptions.text.substring(0, 100) + '...'
+        });
+        return { messageId: `mock-msg-${Date.now()}` };
+      }
+    };
+  } else {
+    logger.info('Initializing production SMTP transport connection pool...', { host, port });
+    mailTransporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: false,
+      auth: {
+        user,
+        pass
+      }
+    });
+  }
+
+  return mailTransporter;
+}
 
 /**
  * Asynchronous boot sequence for the Email Worker service.
@@ -20,10 +72,17 @@ async function bootstrap() {
   try {
     logger.info('Starting Email Worker Service boot sequence...');
 
-    // 1. Initialize our shared Kafka client
+    // 1. Establish database connection pool
+    dbPool = getDbPool();
+    const dbTimeResult = await dbPool.query('SELECT NOW()');
+    logger.info('PostgreSQL connection verified successfully.', {
+      dbServerTime: dbTimeResult.rows[0].now
+    });
+
+    // 2. Initialize our shared Kafka client
     const kafka = getKafkaClient();
 
-    // 2. Create the Kafka consumer referencing the centralized Email Worker consumer group
+    // 3. Create the Kafka consumer referencing the centralized Email Worker consumer group
     kafkaConsumer = kafka.consumer({
       groupId: CONSUMER_GROUPS.EMAIL
     });
@@ -32,14 +91,14 @@ async function bootstrap() {
     await kafkaConsumer.connect();
     logger.info('Kafka consumer connected successfully.');
 
-    // 3. Subscribe to the main event ingestion topic
+    // 4. Subscribe to the main event ingestion topic
     logger.info(`Subscribing to main events topic: ${TOPICS.EVENTS}...`);
     await kafkaConsumer.subscribe({
       topic: TOPICS.EVENTS,
       fromBeginning: false // Start reading fresh messages on startup
     });
 
-    // 4. Start processing stream
+    // 5. Start processing stream
     logger.info('Email Worker consumer is listening and active.');
     await kafkaConsumer.run({
       eachMessage: async ({ topic, partition, message }) => {
@@ -133,14 +192,53 @@ async function bootstrap() {
             userId: payload.userId,
             eventType: payload.eventType,
             renderedSubject,
-            renderedBodyLength: renderedBody.length,
-            renderedBodyPreview: renderedBody.substring(0, 100) + '...'
+            renderedBodyLength: renderedBody.length
           });
 
-          // Step placeholder: In Part 27, we will configure Nodemailer and send the email!
+          // 4. Retrieve User email contact details from PostgreSQL
+          logger.info('Querying user email from database...', { userId: payload.userId });
+          const userResult = await dbPool.query(
+            'SELECT email, external_user_id FROM users WHERE id = $1',
+            [payload.userId]
+          );
+
+          let recipientEmail = null;
+          if (userResult.rows.length > 0 && userResult.rows[0].email) {
+            recipientEmail = userResult.rows[0].email;
+          } else if (payload.payload && payload.payload.email) {
+            recipientEmail = payload.payload.email;
+          }
+
+          if (!recipientEmail) {
+            logger.warn('Skipping email delivery: Recipient email address not found in DB or event payload', {
+              userId: payload.userId,
+              eventType: payload.eventType
+            });
+            return;
+          }
+
+          // 5. Execute Nodemailer SMTP Transporter delivery
+          logger.info('Initiating email dispatch...', { recipientEmail });
+          const transporter = getMailTransporter();
+          const mailOptions = {
+            from: process.env.SMTP_FROM_EMAIL || '"NotifyFlow Alerts" <alerts@notifyflow.com>',
+            to: recipientEmail,
+            subject: renderedSubject || 'Notification Alert',
+            text: renderedBody
+          };
+
+          const info = await transporter.sendMail(mailOptions);
+          logger.info('Email delivered successfully!', {
+            userId: payload.userId,
+            eventId: payload.eventId,
+            messageId: info.messageId,
+            recipient: recipientEmail
+          });
+
+          // Step placeholder: In Part 28, we will build transactional logging!
 
         } catch (err) {
-          logger.error('Failed to process event or compile templates', {
+          logger.error('Failed to process event or deliver email', {
             error: err.message,
             stack: err.stack,
             rawBody
