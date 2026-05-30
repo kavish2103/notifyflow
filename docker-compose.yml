@@ -41,6 +41,10 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT'
       KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
       KAFKA_CLUSTER_ID: '4L62xAE2Txy7zpqgCgup1Q'
+      # Enforce single-node offset and transaction metadata limits to prevent group coordinator failures
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
 volumes:
   # Named persistent volumes to retain database and queue states
