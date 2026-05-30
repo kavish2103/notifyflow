@@ -362,21 +362,64 @@ async function bootstrap() {
               }
 
             } else {
-              // Retries fully exhausted (DLQ logic in future part)
-              logger.warn('Email worker retries fully exhausted for event', {
+              // Retries fully exhausted (DLQ logic)
+              logger.warn('Email worker retries fully exhausted for event. Moving to DLQ...', {
                 eventId: payload.eventId,
                 retryCount: currentRetryCount
               });
 
-              await logDelivery({
-                eventId: payload.eventId,
-                tenantId: payload.tenantId,
-                userId: payload.userId,
-                eventType: payload.eventType,
-                status: 'failed',
-                errorMessage: `Retries exhausted: ${err.message}`,
-                retryCount: currentRetryCount
-              });
+              try {
+                // 1. Publish raw envelope to the Kafka DLQ topic
+                const producer = await getKafkaProducer();
+                await producer.send({
+                  topic: TOPICS.DLQ,
+                  messages: [
+                    {
+                      key: payload.userId,
+                      value: JSON.stringify(payload)
+                    }
+                  ]
+                });
+                logger.info('Successfully enqueued event onto Kafka DLQ stream', { eventId: payload.eventId });
+
+                // 2. Persist in dead_letter_events PostgreSQL table
+                const dlqQuery = `
+                  INSERT INTO dead_letter_events (event_id, tenant_id, channel, event_type, payload, failure_reason, retry_count, last_attempted_at)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                  ON CONFLICT (event_id)
+                  DO UPDATE SET 
+                    failure_reason = EXCLUDED.failure_reason,
+                    retry_count = EXCLUDED.retry_count,
+                    last_attempted_at = NOW()
+                `;
+                await dbPool.query(dlqQuery, [
+                  payload.eventId,
+                  payload.tenantId,
+                  'email',
+                  payload.eventType,
+                  JSON.stringify(payload),
+                  err.message,
+                  currentRetryCount
+                ]);
+                logger.info('Dead letter event successfully registered in PostgreSQL', { eventId: payload.eventId });
+
+                // 3. Write final delivery log
+                await logDelivery({
+                  eventId: payload.eventId,
+                  tenantId: payload.tenantId,
+                  userId: payload.userId,
+                  eventType: payload.eventType,
+                  status: 'failed',
+                  errorMessage: `Retries exhausted: ${err.message}. Relocated to DLQ.`,
+                  retryCount: currentRetryCount
+                });
+
+              } catch (dlqErr) {
+                logger.error('Failed to register dead letter event or publish onto DLQ stream', {
+                  error: dlqErr.message,
+                  eventId: payload.eventId
+                });
+              }
             }
           }
         }
