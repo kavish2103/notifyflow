@@ -3,66 +3,57 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 // Enforce service identity BEFORE loading the logger to label all logs correctly
-process.env.SERVICE_NAME = 'email-worker-service';
+process.env.SERVICE_NAME = 'sms-worker-service';
 
 const { logger } = require('@notifyflow/logger');
 const { getKafkaClient, getKafkaProducer, TOPICS, CONSUMER_GROUPS } = require('@notifyflow/kafka');
 
 const Handlebars = require('handlebars');
+const twilio = require('twilio');
 
 const { getDbPool } = require('./db');
-const nodemailer = require('nodemailer');
 
 let kafkaConsumer = null;
 let retryConsumer = null;
-let mailTransporter = null;
 let dbPool = null;
+let twilioClient = null;
 
 /**
- * Returns the configured Nodemailer client transport (Singleton).
- * Cascades resiliently to a simulated Mock transporter if SMTP credentials are left at default values.
+ * Returns the configured Twilio client or falls back to a simulated Mock SMS dispatcher
+ * if the credentials are not configured or default in the environment.
  */
-function getMailTransporter() {
-  if (mailTransporter) {
-    return mailTransporter;
+function getSmsDispatcher() {
+  if (twilioClient) {
+    return twilioClient;
   }
 
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '2525');
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = process.env.TWILIO_FROM_NUMBER;
 
-  // Detect unconfigured or default values to fallback to a simulated local trace
-  const isMock = !user || user.includes('your_mailtrap_smtp_username');
+  const isMock = !accountSid || !authToken || !fromNumber;
 
   if (isMock) {
-    logger.info('Using MOCK email delivery transporter (SMTP credentials not configured)');
-    mailTransporter = {
-      sendMail: async (mailOptions) => {
-        logger.info('=== [MOCK EMAIL SENT SUCCESSFULLY] ===', {
-          to: mailOptions.to,
-          from: mailOptions.from,
-          subject: mailOptions.subject,
-          bodyLength: mailOptions.text.length,
-          preview: mailOptions.text.substring(0, 100) + '...'
-        });
-        return { messageId: `mock-msg-${Date.now()}` };
+    logger.info('Using MOCK SMS delivery dispatcher (Twilio credentials not configured)');
+    twilioClient = {
+      messages: {
+        create: async (options) => {
+          logger.info('=== [MOCK SMS SENT SUCCESSFULLY] ===', {
+            to: options.to,
+            from: options.from || 'MOCK_SENDER',
+            bodyLength: options.body.length,
+            preview: options.body.substring(0, 100) + '...'
+          });
+          return { sid: `mock-sms-${Date.now()}` };
+        }
       }
     };
   } else {
-    logger.info('Initializing production SMTP transport connection pool...', { host, port });
-    mailTransporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: false,
-      auth: {
-        user,
-        pass
-      }
-    });
+    logger.info('Initializing production Twilio SMS client...', { accountSid, fromNumber });
+    twilioClient = twilio(accountSid, authToken);
   }
 
-  return mailTransporter;
+  return twilioClient;
 }
 
 /**
@@ -78,7 +69,7 @@ async function logDelivery({ eventId, tenantId, userId, eventType, status, error
       eventId,
       tenantId,
       userId,
-      'email',
+      'sms',
       eventType,
       status,
       errorMessage,
@@ -95,14 +86,14 @@ async function logDelivery({ eventId, tenantId, userId, eventType, status, error
 }
 
 /**
- * Executes the complete email delivery pipeline:
+ * Executes the complete SMS delivery pipeline:
  * Checks preferences, fetches templates, compiles dynamic template via Handlebars,
- * queries PostgreSQL database, and dispatches email via Nodemailer SMTP.
+ * queries PostgreSQL database for recipient contact number, and dispatches SMS.
  */
-async function deliverEmailEvent(payload) {
-  // 1. Verify User Preferences for Email
+async function deliverSmsEvent(payload) {
+  // 1. Verify User Preferences for SMS channel
   const prefServiceUrl = process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003';
-  logger.info('Checking user preferences for email channel...', { 
+  logger.info('Checking user preferences for SMS channel...', { 
     userId: payload.userId, 
     url: `${prefServiceUrl}/v1/preferences/${payload.userId}` 
   });
@@ -119,11 +110,11 @@ async function deliverEmailEvent(payload) {
   }
 
   const prefData = await prefRes.json();
-  const emailPref = prefData.preferences.find(p => p.channel === 'email');
-  const isOptedIn = emailPref ? emailPref.optedIn : true;
+  const smsPref = prefData.preferences.find(p => p.channel === 'sms');
+  const isOptedIn = smsPref ? smsPref.optedIn : true;
 
   if (!isOptedIn) {
-    logger.info('Skipping email delivery: User is opted out', {
+    logger.info('Skipping SMS delivery: User is opted out', {
       userId: payload.userId,
       correlationId: payload.correlationId
     });
@@ -134,18 +125,18 @@ async function deliverEmailEvent(payload) {
       userId: payload.userId,
       eventType: payload.eventType,
       status: 'skipped',
-      errorMessage: 'User has opted out of email channel preferences'
+      errorMessage: 'User has opted out of SMS channel preferences'
     });
     return;
   }
 
-  // 2. Fetch specific Email template from port 3003
-  logger.info('Fetching email template configured for event...', {
+  // 2. Fetch SMS template from Preference-Template microservice on port 3003
+  logger.info('Fetching SMS template configured for event...', {
     eventType: payload.eventType,
-    url: `${prefServiceUrl}/v1/templates/${payload.eventType}/email`
+    url: `${prefServiceUrl}/v1/templates/${payload.eventType}/sms`
   });
 
-  const tmplRes = await fetch(`${prefServiceUrl}/v1/templates/${payload.eventType}/email`, {
+  const tmplRes = await fetch(`${prefServiceUrl}/v1/templates/${payload.eventType}/sms`, {
     headers: {
       'x-tenant-id': payload.tenantId,
       'x-correlation-id': payload.correlationId
@@ -153,7 +144,7 @@ async function deliverEmailEvent(payload) {
   });
 
   if (tmplRes.status === 404) {
-    logger.warn('Skipping email delivery: No email template found for event type', {
+    logger.warn('Skipping SMS delivery: No SMS template found for event type', {
       eventType: payload.eventType,
       tenantId: payload.tenantId
     });
@@ -164,48 +155,44 @@ async function deliverEmailEvent(payload) {
       userId: payload.userId,
       eventType: payload.eventType,
       status: 'skipped',
-      errorMessage: `No email template registered for event type '${payload.eventType}'`
+      errorMessage: `No SMS template registered for event type '${payload.eventType}'`
     });
     return;
   }
 
   if (!tmplRes.ok) {
-    throw new Error(`Failed to fetch email template: status ${tmplRes.status}`);
+    throw new Error(`Failed to fetch SMS template: status ${tmplRes.status}`);
   }
 
   const tmplData = await tmplRes.json();
-  const { subjectTemplate, bodyTemplate } = tmplData;
+  const { bodyTemplate } = tmplData;
 
   // 3. Compile and Render Dynamic Handlebars Templates
-  const compileSubject = Handlebars.compile(subjectTemplate || '');
   const compileBody = Handlebars.compile(bodyTemplate);
-
-  const renderedSubject = compileSubject(payload.payload || {});
   const renderedBody = compileBody(payload.payload || {});
 
-  logger.info('Email templates successfully rendered dynamically', {
+  logger.info('SMS templates successfully rendered dynamically', {
     userId: payload.userId,
     eventType: payload.eventType,
-    renderedSubject,
     renderedBodyLength: renderedBody.length
   });
 
-  // 4. Retrieve User email contact details from PostgreSQL
-  logger.info('Querying user email from database...', { userId: payload.userId });
+  // 4. Retrieve User phone details from PostgreSQL
+  logger.info('Querying user phone number from database...', { userId: payload.userId });
   const userResult = await dbPool.query(
-    'SELECT email, external_user_id FROM users WHERE id = $1',
+    'SELECT phone, external_user_id FROM users WHERE id = $1',
     [payload.userId]
   );
 
-  let recipientEmail = null;
-  if (userResult.rows.length > 0 && userResult.rows[0].email) {
-    recipientEmail = userResult.rows[0].email;
-  } else if (payload.payload && payload.payload.email) {
-    recipientEmail = payload.payload.email;
+  let recipientPhone = null;
+  if (userResult.rows.length > 0 && userResult.rows[0].phone) {
+    recipientPhone = userResult.rows[0].phone;
+  } else if (payload.payload && payload.payload.phoneNumber) {
+    recipientPhone = payload.payload.phoneNumber;
   }
 
-  if (!recipientEmail) {
-    logger.warn('Skipping email delivery: Recipient email address not found in DB or event payload', {
+  if (!recipientPhone) {
+    logger.warn('Skipping SMS delivery: Recipient phone number not found in DB or event payload', {
       userId: payload.userId,
       eventType: payload.eventType
     });
@@ -216,27 +203,27 @@ async function deliverEmailEvent(payload) {
       userId: payload.userId,
       eventType: payload.eventType,
       status: 'skipped',
-      errorMessage: 'Recipient email address not found in database or event payload context'
+      errorMessage: 'Recipient phone number not found in database or event payload context'
     });
     return;
   }
 
-  // 5. Execute Nodemailer SMTP Transporter delivery
-  logger.info('Initiating email dispatch...', { recipientEmail });
-  const transporter = getMailTransporter();
-  const mailOptions = {
-    from: process.env.SMTP_FROM_EMAIL || '"NotifyFlow Alerts" <alerts@notifyflow.com>',
-    to: recipientEmail,
-    subject: renderedSubject || 'Notification Alert',
-    text: renderedBody
-  };
+  // 5. Dispatch SMS
+  logger.info('Initiating SMS dispatch...', { recipientPhone });
+  const dispatcher = getSmsDispatcher();
+  const fromNumber = process.env.TWILIO_FROM_NUMBER || '+15555555555';
 
-  const info = await transporter.sendMail(mailOptions);
-  logger.info('Email delivered successfully!', {
+  const info = await dispatcher.messages.create({
+    to: recipientPhone,
+    from: fromNumber,
+    body: renderedBody
+  });
+
+  logger.info('SMS delivered successfully!', {
     userId: payload.userId,
     eventId: payload.eventId,
-    messageId: info.messageId,
-    recipient: recipientEmail
+    messageSid: info.sid,
+    recipient: recipientPhone
   });
 
   await logDelivery({
@@ -249,12 +236,12 @@ async function deliverEmailEvent(payload) {
 }
 
 /**
- * Asynchronous boot sequence for the Email Worker service.
- * Establishes a consumer connection and starts processing the main Kafka event stream.
+ * Asynchronous boot sequence for the SMS Worker service.
+ * Establishes consumer connections and starts processing the Kafka streams.
  */
 async function bootstrap() {
   try {
-    logger.info('Starting Email Worker Service boot sequence...');
+    logger.info('Starting SMS Worker Service boot sequence...');
 
     // 1. Establish database connection pool
     dbPool = getDbPool();
@@ -266,12 +253,12 @@ async function bootstrap() {
     // 2. Initialize our shared Kafka client
     const kafka = getKafkaClient();
 
-    // 3. Create the Kafka consumer referencing the centralized Email Worker consumer group
+    // 3. Create the Kafka consumer referencing the centralized SMS Worker consumer group
     kafkaConsumer = kafka.consumer({
-      groupId: CONSUMER_GROUPS.EMAIL
+      groupId: CONSUMER_GROUPS.SMS
     });
 
-    logger.info('Connecting Email Worker Kafka consumer...');
+    logger.info('Connecting SMS Worker Kafka consumer...');
     await kafkaConsumer.connect();
     logger.info('Kafka consumer connected successfully.');
 
@@ -279,15 +266,15 @@ async function bootstrap() {
     logger.info(`Subscribing to main events topic: ${TOPICS.EVENTS}...`);
     await kafkaConsumer.subscribe({
       topic: TOPICS.EVENTS,
-      fromBeginning: false // Start reading fresh messages on startup
+      fromBeginning: false
     });
 
     // 5. Initialize the secondary Retry Consumer group for exponential backoff handling
     retryConsumer = kafka.consumer({
-      groupId: CONSUMER_GROUPS.EMAIL_RETRY
+      groupId: CONSUMER_GROUPS.SMS_RETRY
     });
 
-    logger.info('Connecting Email Worker Kafka retry consumer...');
+    logger.info('Connecting SMS Worker Kafka retry consumer...');
     await retryConsumer.connect();
     logger.info('Kafka retry consumer connected successfully.');
 
@@ -298,7 +285,7 @@ async function bootstrap() {
     });
 
     // 6. Start processing main stream
-    logger.info('Email Worker consumer is listening and active.');
+    logger.info('SMS Worker consumer is listening and active.');
     await kafkaConsumer.run({
       eachMessage: async ({ topic, partition, message }) => {
         const offset = message.offset;
@@ -323,12 +310,12 @@ async function bootstrap() {
             tenantId: payload.tenantId,
             userId: payload.userId
           });
-          
-          // Execute email delivery pipeline helper
-          await deliverEmailEvent(payload);
+
+          // Process delivery pipeline helper
+          await deliverSmsEvent(payload);
 
         } catch (err) {
-          logger.error('Failed to process event or deliver email', {
+          logger.error('Failed to process event or deliver SMS', {
             error: err.message,
             stack: err.stack,
             rawBody
@@ -345,13 +332,13 @@ async function bootstrap() {
 
               const retryEvent = {
                 ...payload,
-                channel: 'email', // Tag specifically for Email channel isolation
+                channel: 'sms', // Tag specifically for SMS channel isolation
                 retryCount: nextRetryCount,
                 nextAttemptAt
               };
 
               try {
-                // Publish retry envelope onto Kafka retry topic
+                // Publish retry envelope strictly onto retry queue topic
                 const producer = await getKafkaProducer();
                 await producer.send({
                   topic: TOPICS.RETRY,
@@ -363,7 +350,7 @@ async function bootstrap() {
                   ]
                 });
 
-                logger.info('Enqueued event for retry delivery stream successfully', {
+                logger.info('Enqueued event for retry SMS delivery stream successfully', {
                   eventId: payload.eventId,
                   retryCount: nextRetryCount,
                   backoffDelayMs,
@@ -390,7 +377,7 @@ async function bootstrap() {
 
             } else {
               // Retries fully exhausted (DLQ logic)
-              logger.warn('Email worker retries fully exhausted for event. Moving to DLQ...', {
+              logger.warn('SMS worker retries fully exhausted for event. Moving to DLQ...', {
                 eventId: payload.eventId,
                 retryCount: currentRetryCount
               });
@@ -422,7 +409,7 @@ async function bootstrap() {
                 await dbPool.query(dlqQuery, [
                   payload.eventId,
                   payload.tenantId,
-                  'email',
+                  'sms',
                   payload.eventType,
                   JSON.stringify(payload),
                   err.message,
@@ -454,7 +441,7 @@ async function bootstrap() {
     });
 
     // 7. Start processing retry stream asynchronously
-    logger.info('Email Worker retry consumer is listening and active.');
+    logger.info('SMS Worker retry consumer is listening and active.');
     await retryConsumer.run({
       eachMessage: async ({ topic, partition, message }) => {
         const rawBody = message.value.toString();
@@ -462,8 +449,8 @@ async function bootstrap() {
         try {
           payload = JSON.parse(rawBody);
 
-          // Discard retry envelopes targeting other channel workers (sms, push, etc.)
-          if (payload.channel && payload.channel !== 'email') {
+          // Discard retry envelopes targeting other channel workers (email, push, etc.)
+          if (payload.channel && payload.channel !== 'sms') {
             return;
           }
 
@@ -489,10 +476,10 @@ async function bootstrap() {
           });
 
           // Attempt retry delivery directly
-          await deliverEmailEvent(payload);
+          await deliverSmsEvent(payload);
 
         } catch (err) {
-          logger.error('Failed to process retry event or deliver retry email', {
+          logger.error('Failed to process retry event or deliver retry SMS', {
             error: err.message,
             rawBody
           });
@@ -508,7 +495,7 @@ async function bootstrap() {
 
               const retryEvent = {
                 ...payload,
-                channel: 'email',
+                channel: 'sms',
                 retryCount: nextRetryCount,
                 nextAttemptAt
               };
@@ -533,7 +520,7 @@ async function bootstrap() {
                   nextAttemptAt
                 });
 
-                // Record failure attempt log in postgres
+                // Record failure attempt log in PostgreSQL
                 await logDelivery({
                   eventId: payload.eventId,
                   tenantId: payload.tenantId,
@@ -552,7 +539,7 @@ async function bootstrap() {
               }
             } else {
               // Retries exhausted inside retry consumer flow -> DLQ logic
-              logger.warn('Email worker retry loop fully exhausted. Relocating to DLQ...', {
+              logger.warn('SMS worker retry loop fully exhausted. Relocating to DLQ...', {
                 eventId: payload.eventId,
                 retryCount: currentRetryCount
               });
@@ -582,7 +569,7 @@ async function bootstrap() {
                 await dbPool.query(dlqQuery, [
                   payload.eventId,
                   payload.tenantId,
-                  'email',
+                  'sms',
                   payload.eventType,
                   JSON.stringify(payload),
                   err.message,
@@ -613,7 +600,7 @@ async function bootstrap() {
     });
 
   } catch (error) {
-    logger.error('Critical boot sequence failure for Email Worker. Terminating.', {
+    logger.error('Critical boot sequence failure for SMS Worker. Terminating.', {
       error: error.message,
       stack: error.stack
     });
@@ -625,7 +612,7 @@ async function bootstrap() {
  * Graceful termination handler to close consumer connections cleanly.
  */
 const shutdown = async (signal) => {
-  logger.info(`Received ${signal}. Launching Email Worker graceful shutdown...`);
+  logger.info(`Received ${signal}. Launching SMS Worker graceful shutdown...`);
 
   if (kafkaConsumer) {
     logger.info('Closing Kafka consumer stream...');
@@ -660,4 +647,3 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 bootstrap();
-
