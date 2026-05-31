@@ -1,0 +1,22 @@
+{
+  "name": "@notifyflow/push-worker",
+  "version": "1.0.0",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "web-push": "^3.6.7",
+    "handlebars": "^4.7.8",
+    "@notifyflow/logger": "^1.0.0",
+    "@notifyflow/redis": "^1.0.0",
+    "@notifyflow/schemas": "^1.0.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
