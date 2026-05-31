@@ -14,6 +14,7 @@ const { getDbPool } = require('./db');
 const nodemailer = require('nodemailer');
 
 let kafkaConsumer = null;
+let retryConsumer = null;
 let mailTransporter = null;
 let dbPool = null;
 
@@ -127,7 +128,22 @@ async function bootstrap() {
       fromBeginning: false // Start reading fresh messages on startup
     });
 
-    // 5. Start processing stream
+    // 5. Initialize the secondary Retry Consumer group for exponential backoff handling
+    retryConsumer = kafka.consumer({
+      groupId: CONSUMER_GROUPS.EMAIL_RETRY
+    });
+
+    logger.info('Connecting Email Worker Kafka retry consumer...');
+    await retryConsumer.connect();
+    logger.info('Kafka retry consumer connected successfully.');
+
+    logger.info(`Subscribing to retry stream topic: ${TOPICS.RETRY}...`);
+    await retryConsumer.subscribe({
+      topic: TOPICS.RETRY,
+      fromBeginning: false
+    });
+
+    // 6. Start processing main stream
     logger.info('Email Worker consumer is listening and active.');
     await kafkaConsumer.run({
       eachMessage: async ({ topic, partition, message }) => {
@@ -426,6 +442,56 @@ async function bootstrap() {
       }
     });
 
+    // 7. Start processing retry stream asynchronously
+    logger.info('Email Worker retry consumer is listening and active.');
+    await retryConsumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        const rawBody = message.value.toString();
+        try {
+          const payload = JSON.parse(rawBody);
+          const { nextAttemptAt } = payload;
+          
+          const now = Date.now();
+          const targetTime = new Date(nextAttemptAt).getTime();
+          const sleepTimeMs = targetTime - now;
+
+          if (sleepTimeMs > 0) {
+            logger.info('Exponential backoff delay active. Halting retry message processing...', {
+              eventId: payload.eventId,
+              retryCount: payload.retryCount,
+              sleepTimeMs
+            });
+            // Resilient non-blocking sleep wait
+            await new Promise(resolve => setTimeout(resolve, sleepTimeMs));
+          }
+
+          logger.info('Backoff delay met. Re-injecting event back onto main queue stream...', {
+            eventId: payload.eventId,
+            retryCount: payload.retryCount
+          });
+
+          // Re-inject back to main Kafka ingestion topic partitioned by userId to guarantee ordering
+          const producer = await getKafkaProducer();
+          await producer.send({
+            topic: TOPICS.EVENTS,
+            messages: [
+              {
+                key: payload.userId,
+                value: JSON.stringify(payload)
+              }
+            ]
+          });
+          logger.info('Retry event successfully re-injected onto main stream', { eventId: payload.eventId });
+
+        } catch (err) {
+          logger.error('Failed to process retry event or re-inject onto main queue', {
+            error: err.message,
+            rawBody
+          });
+        }
+      }
+    });
+
   } catch (error) {
     logger.error('Critical boot sequence failure for Email Worker. Terminating.', {
       error: error.message,
@@ -448,6 +514,18 @@ const shutdown = async (signal) => {
       logger.info('Kafka consumer disconnected cleanly.');
     } catch (err) {
       logger.error('Error disconnecting Kafka consumer during shutdown', {
+        error: err.message
+      });
+    }
+  }
+
+  if (retryConsumer) {
+    logger.info('Closing Kafka retry consumer stream...');
+    try {
+      await retryConsumer.disconnect();
+      logger.info('Kafka retry consumer disconnected cleanly.');
+    } catch (err) {
+      logger.error('Error disconnecting Kafka retry consumer during shutdown', {
         error: err.message
       });
     }
