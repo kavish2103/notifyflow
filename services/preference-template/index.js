@@ -196,6 +196,59 @@ app.post('/v1/preferences/:userId', async (req, res) => {
   }
 });
 
+/**
+ * POST /v1/preferences/:userId/push-token
+ * Registers a real browser Web Push token/subscription inside PostgreSQL.
+ */
+app.post('/v1/preferences/:userId/push-token', async (req, res) => {
+  const { userId } = req.params;
+  const { pushToken } = req.body;
+  const tenantId = req.headers['x-tenant-id'];
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database connection is offline.'
+    });
+  }
+
+  try {
+    const tokenStr = typeof pushToken === 'string' ? pushToken : JSON.stringify(pushToken);
+    
+    await dbPool.query(
+      `INSERT INTO users (id, tenant_id, external_user_id, push_token)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) 
+       DO UPDATE SET push_token = EXCLUDED.push_token`,
+      [userId, tenantId, userId, tokenStr]
+    );
+
+    logger.info('Successfully registered browser push subscription in PostgreSQL', { userId });
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'Browser push subscription registered successfully.',
+      userId
+    });
+  } catch (error) {
+    logger.error('Error saving user push token', {
+      userId,
+      tenantId,
+      error: error.message
+    });
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to save push subscription.'
+    });
+  }
+});
+
 // ==============================================================================
 // TEMPLATES MANAGEMENT ROUTES
 // ==============================================================================

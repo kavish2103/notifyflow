@@ -12,6 +12,7 @@
     "twilio": "^4.20.0",
     "handlebars": "^4.7.8",
     "@notifyflow/logger": "^1.0.0",
+    "@notifyflow/kafka": "^1.0.0",
     "@notifyflow/redis": "^1.0.0",
     "@notifyflow/schemas": "^1.0.0"
   },

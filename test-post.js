@@ -11,6 +11,8 @@ async function runTest() {
     userId: 'user-cust-99',
     eventType: 'payment.failed',
     payload: {
+      name: 'Kavish',
+      companyName: 'Acme Billing Solutions',
       amount: 49.99,
       currency: 'USD',
       reason: 'Insufficient funds',

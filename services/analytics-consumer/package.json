@@ -13,6 +13,7 @@
     "kafkajs": "^2.2.4",
     "pg": "^8.11.3",
     "@notifyflow/logger": "^1.0.0",
+    "@notifyflow/kafka": "^1.0.0",
     "@notifyflow/redis": "^1.0.0",
     "@notifyflow/schemas": "^1.0.0"
   },

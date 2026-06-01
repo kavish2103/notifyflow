@@ -58,6 +58,75 @@ export default function App() {
     setError(null);
   };
 
+  // Helper to convert base64 VAPID public key to standard Uint8Array
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  // Handle requesting permission, service worker registration, and Web Push subscription
+  const handlePushSubscribe = async () => {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        alert('Web Push is not supported by your current browser.');
+        return;
+      }
+
+      // 1. Request notification permission
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('Notification permission was denied.');
+        return;
+      }
+
+      // 2. Register Service Worker
+      await navigator.serviceWorker.register('/sw.js');
+      
+      // Wait robustly until the registered service worker is active and ready
+      const registration = await navigator.serviceWorker.ready;
+      console.log('Service Worker is active and ready:', registration);
+
+      // 3. Subscribe with the public VAPID key
+      const publicVapidKey = 'BBPV-vkpRNEfuIrlGmxCXXUv86F09uLR4IGjk2wGJYzxQNPhRw0Zp9dMHfqHc5wnpOn03LW_3_SC4HiANX2W0Qg';
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicVapidKey)
+      });
+
+      console.log('Web Push subscription compiled:', subscription);
+
+      // 4. Save subscription details in PostgreSQL for user user-cust-99
+      const userId = 'user-cust-99';
+      const res = await fetch(`http://localhost:3000/v1/preferences/${userId}/push-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify({ pushToken: subscription })
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to register push token: Status ${res.status}`);
+      }
+
+      alert('Successfully subscribed to browser push alerts! The token was registered in PostgreSQL for user-cust-99.');
+    } catch (err) {
+      console.error(err);
+      alert(`Subscription failed: ${err.message}`);
+    }
+  };
+
   // Helper metrics percentages
   const calculateRate = (part, total) => {
     if (!total || total === 0) return '0%';
@@ -100,6 +169,9 @@ export default function App() {
               <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-success)' }}>
                 ● Active Ingestion Stream
               </span>
+              <button onClick={handlePushSubscribe} className="connect-btn" style={{ backgroundColor: 'var(--accent-success)' }}>
+                Subscribe to Push
+              </button>
               <button onClick={handleDisconnect} className="connect-btn" style={{ backgroundColor: 'var(--text-muted)' }}>
                 Disconnect
               </button>
