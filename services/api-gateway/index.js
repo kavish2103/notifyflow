@@ -119,6 +119,31 @@ app.use('/v1/templates',
   })
 );
 
+/**
+ * 4. Proxy Routing: Analytics Service
+ * Route: /v1/analytics
+ * Security: Flexible authentication (allows JWT Bearer or B2B API Key lookup)
+ */
+app.use('/v1/analytics',
+  authenticateFlexible,
+  createProxyMiddleware({
+    target: process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3004',
+    changeOrigin: true,
+    onProxyReq: (proxyReq, req) => {
+      // Set custom headers first
+      if (req.headers['x-tenant-id']) {
+        proxyReq.setHeader('x-tenant-id', req.headers['x-tenant-id']);
+      }
+      if (req.headers['x-correlation-id']) {
+        proxyReq.setHeader('x-correlation-id', req.headers['x-correlation-id']);
+      }
+
+      // Restream body last
+      fixRequestBody(proxyReq, req);
+    }
+  })
+);
+
 let server = null;
 let redisClient = null;
 
