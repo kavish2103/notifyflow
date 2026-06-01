@@ -1,0 +1,22 @@
+{
+  "name": "@notifyflow/analytics-consumer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.11.3",
+    "@notifyflow/logger": "^1.0.0",
+    "@notifyflow/redis": "^1.0.0",
+    "@notifyflow/schemas": "^1.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

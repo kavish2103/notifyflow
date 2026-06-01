@@ -102,9 +102,9 @@ async function logDelivery({ eventId, tenantId, userId, eventType, status, error
 async function deliverEmailEvent(payload) {
   // 1. Verify User Preferences for Email
   const prefServiceUrl = process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003';
-  logger.info('Checking user preferences for email channel...', { 
-    userId: payload.userId, 
-    url: `${prefServiceUrl}/v1/preferences/${payload.userId}` 
+  logger.info('Checking user preferences for email channel...', {
+    userId: payload.userId,
+    url: `${prefServiceUrl}/v1/preferences/${payload.userId}`
   });
 
   const prefRes = await fetch(`${prefServiceUrl}/v1/preferences/${payload.userId}`, {
@@ -323,7 +323,7 @@ async function bootstrap() {
             tenantId: payload.tenantId,
             userId: payload.userId
           });
-          
+
           // Execute email delivery pipeline helper
           await deliverEmailEvent(payload);
 
@@ -468,7 +468,7 @@ async function bootstrap() {
           }
 
           const { nextAttemptAt } = payload;
-          
+
           const now = Date.now();
           const targetTime = new Date(nextAttemptAt).getTime();
           const sleepTimeMs = targetTime - now;
