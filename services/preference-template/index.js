@@ -40,6 +40,81 @@ app.get('/health', (req, res) => {
 // ==============================================================================
 
 /**
+ * POST /v1/users
+ * Registers a new user under B2B tenant boundaries.
+ * Returns the generated cryptographic userId.
+ */
+app.post('/v1/users', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'];
+  const { externalUserId, email, phone } = req.body;
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database connection is offline.'
+    });
+  }
+
+  try {
+    // Generate a unique user ID prefixed with 'user-'
+    const userId = `user-${crypto.randomUUID ? crypto.randomUUID() : require('crypto').randomUUID()}`;
+    const extId = externalUserId || userId;
+
+    await dbPool.query(
+      `INSERT INTO users (id, tenant_id, external_user_id, email, phone)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId, tenantId, extId, email || null, phone || null]
+    );
+
+    // Initialize default opt-in preferences for all channels for this user
+    const channels = ['email', 'sms', 'push'];
+    for (const channel of channels) {
+      await dbPool.query(
+        `INSERT INTO user_preferences (user_id, channel, opted_in, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (user_id, channel) DO NOTHING`,
+        [userId, channel, true]
+      );
+    }
+
+    logger.info('Successfully registered user via POST /v1/users', { userId, tenantId, externalUserId: extId });
+
+    return res.status(201).json({
+      status: 'SUCCESS',
+      message: 'User registered successfully under tenant.',
+      userId,
+      externalUserId: extId,
+      email: email || null,
+      phone: phone || null
+    });
+  } catch (error) {
+    logger.error('Error registering new user', {
+      tenantId,
+      error: error.message
+    });
+
+    if (error.code === '23505') {
+      return res.status(409).json({
+        error: 'ConflictError',
+        message: 'A user with this externalUserId already exists for this tenant.'
+      });
+    }
+
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to register user.'
+    });
+  }
+});
+
+/**
  * GET /v1/preferences/:userId
  * Retrieves custom opt-in/opt-out channel states for a user.
  * Employs a robust Redis Cache-Aside strategy defaulting to fully opted-in.
