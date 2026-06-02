@@ -19,6 +19,10 @@ const PORT = process.env.ANALYTICS_PORT || 3004;
 app.use(cors());
 app.use(express.json());
 
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'UP', service: 'analytics-consumer-service', timestamp: new Date().toISOString() });
+});
+
 let dbPool = null;
 let kafkaConsumer = null;
 let server = null;

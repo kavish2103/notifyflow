@@ -369,3 +369,91 @@ button, input, select {
   padding: 40px 0;
   font-size: 14px;
 }
+
+/* Modal Overlay & Admin Styling */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 500px;
+  background: var(--bg-card);
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-medium);
+  border: 1px solid var(--border-color);
+}
+
+.admin-login-link {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--accent-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+}
+
+.admin-login-link:hover {
+  color: var(--accent-primary-hover);
+}
+
+.admin-header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.health-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background-color: var(--bg-page);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.health-status-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.health-status-badge.healthy {
+  background-color: var(--status-delivered-bg);
+  color: var(--status-delivered-text);
+}
+
+.health-status-badge.active {
+  background-color: #ebf8ff;
+  color: #2b6cb0;
+}
+
+.health-status-badge.offline {
+  background-color: var(--status-failed-bg);
+  color: var(--status-failed-text);
+}
+
