@@ -30,6 +30,12 @@ export default function App() {
   const [publisherStatus, setPublisherStatus] = useState(null);
   const [publisherError, setPublisherError] = useState(null);
 
+  // User Subscription States
+  const [userPrefs, setUserPrefs] = useState(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [isPrefsLoading, setIsPrefsLoading] = useState(false);
+
   // Poll metrics on a 5-second interval when connected
   useEffect(() => {
     if (isAdminMode) return;
@@ -48,6 +54,16 @@ export default function App() {
     const interval = setInterval(() => fetchAdminData(adminToken), 10000);
     return () => clearInterval(interval);
   }, [isAdminMode, isAdminConnected, adminToken]);
+
+  // Poll user preferences and subscription status
+  useEffect(() => {
+    if (isAdminMode) return;
+    if (!isConnected || !apiKey || !publisherUserId) return;
+
+    fetchUserPrefs(publisherUserId);
+    const interval = setInterval(() => fetchUserPrefs(publisherUserId), 10000);
+    return () => clearInterval(interval);
+  }, [isConnected, apiKey, publisherUserId, isAdminMode]);
 
   const fetchAdminData = async (tokenToUse) => {
     setIsLoading(true);
@@ -96,6 +112,110 @@ export default function App() {
       setError('Connection failed. Please check your B2B API Key or backend services.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchUserPrefs = async (targetUserId) => {
+    if (!targetUserId || !apiKey) return;
+    setIsPrefsLoading(true);
+    try {
+      const res = await fetch(`http://localhost:3000/v1/preferences/${targetUserId}`, {
+        headers: {
+          'x-api-key': apiKey
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch user preferences: Status ${res.status}`);
+      }
+      const data = await res.json();
+      setUserPrefs(data);
+    } catch (err) {
+      console.error('Error fetching user preferences:', err);
+    } finally {
+      setIsPrefsLoading(false);
+    }
+  };
+
+  const handleEmailSubscribe = async (e) => {
+    e.preventDefault();
+    if (!emailInput.trim()) return;
+
+    try {
+      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}/email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify({ email: emailInput.trim() })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to register email subscription');
+      }
+
+      alert(`Successfully subscribed ${publisherUserId} to Email with address ${emailInput.trim()}!`);
+      fetchUserPrefs(publisherUserId);
+    } catch (err) {
+      console.error(err);
+      alert(`Email subscription failed: ${err.message}`);
+    }
+  };
+
+  const handlePhoneSubscribe = async (e) => {
+    e.preventDefault();
+    if (!phoneInput.trim()) return;
+
+    try {
+      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}/phone`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify({ phone: phoneInput.trim() })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to register phone subscription');
+      }
+
+      alert(`Successfully subscribed ${publisherUserId} to SMS with phone number ${phoneInput.trim()}!`);
+      fetchUserPrefs(publisherUserId);
+    } catch (err) {
+      console.error(err);
+      alert(`Phone subscription failed: ${err.message}`);
+    }
+  };
+
+  const handleTogglePreference = async (channel, newOptedIn) => {
+    if (!userPrefs) return;
+
+    const updatedPreferences = userPrefs.preferences.map(p => {
+      if (p.channel === channel) {
+        return { channel: p.channel, optedIn: newOptedIn };
+      }
+      return { channel: p.channel, optedIn: p.optedIn };
+    });
+
+    try {
+      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify({ preferences: updatedPreferences })
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to update preferences');
+      }
+
+      fetchUserPrefs(publisherUserId);
+    } catch (err) {
+      console.error(err);
+      alert(`Failed to update preferences: ${err.message}`);
     }
   };
 
@@ -286,9 +406,8 @@ export default function App() {
 
       console.log('Web Push subscription compiled:', subscription);
 
-      // 4. Save subscription details in PostgreSQL for user user-cust-99
-      const userId = 'user-cust-99';
-      const res = await fetch(`http://localhost:3000/v1/preferences/${userId}/push-token`, {
+      // 4. Save subscription details in PostgreSQL for user publisherUserId
+      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}/push-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -301,7 +420,8 @@ export default function App() {
         throw new Error(`Failed to register push token: Status ${res.status}`);
       }
 
-      alert('Successfully subscribed to browser push alerts! The token was registered in PostgreSQL for user-cust-99.');
+      alert(`Successfully subscribed to browser push alerts! The token was registered in PostgreSQL for ${publisherUserId}.`);
+      fetchUserPrefs(publisherUserId);
     } catch (err) {
       console.error(err);
       alert(`Subscription failed: ${err.message}`);
@@ -371,9 +491,6 @@ export default function App() {
                 <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-success)' }}>
                   ● Active Ingestion Stream
                 </span>
-                <button onClick={handlePushSubscribe} className="connect-btn" style={{ backgroundColor: 'var(--accent-success)' }}>
-                  Subscribe to Push
-                </button>
                 <button onClick={handleDisconnect} className="connect-btn" style={{ backgroundColor: 'var(--text-muted)' }}>
                   Disconnect
                 </button>
@@ -645,6 +762,155 @@ export default function App() {
                 {publisherError && (
                   <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'var(--status-failed-bg)', color: 'var(--status-failed-text)', borderRadius: '6px', fontSize: '13px', fontWeight: 600 }}>
                     {publisherError}
+                  </div>
+                )}
+              </section>
+
+              {/* User Subscription & Preferences Card */}
+              <section className="card" style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                  <h2 style={{ borderBottom: 'none', margin: 0, padding: 0 }}>
+                    User Preferences & Channel Subscriptions
+                  </h2>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Target User:</span>
+                    <span className="status-badge" style={{ backgroundColor: 'var(--accent-primary)', color: 'white', textTransform: 'none', fontSize: '13px', padding: '4px 10px' }}>
+                      {publisherUserId}
+                    </span>
+                  </div>
+                </div>
+
+                {isPrefsLoading && !userPrefs ? (
+                  <div className="empty-state">Loading user subscription status...</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+                    {/* EMAIL CHANNEL */}
+                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-page)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>📧 Email</h3>
+                          <span className={`status-badge ${userPrefs?.email ? 'delivered' : 'failed'}`}>
+                            {userPrefs?.email ? 'Subscribed' : 'Not Subscribed'}
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                          {userPrefs?.email ? `Registered: ${userPrefs.email}` : 'No email address registered for this user ID.'}
+                        </p>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                          <input
+                            type="checkbox"
+                            id="pref-toggle-email"
+                            checked={userPrefs?.preferences?.find(p => p.channel === 'email')?.optedIn !== false}
+                            onChange={(e) => handleTogglePreference('email', e.target.checked)}
+                            disabled={!userPrefs?.email}
+                            style={{ cursor: userPrefs?.email ? 'pointer' : 'not-allowed' }}
+                          />
+                          <label htmlFor="pref-toggle-email" style={{ fontSize: '13px', fontWeight: 600, color: userPrefs?.email ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.email ? 'pointer' : 'not-allowed' }}>
+                            Opt-in to Email Channel
+                          </label>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleEmailSubscribe} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <input
+                          type="email"
+                          className="api-key-input"
+                          style={{ width: '100%', padding: '6px 10px', fontSize: '13px' }}
+                          placeholder="Enter Email Address"
+                          value={emailInput}
+                          onChange={(e) => setEmailInput(e.target.value)}
+                          required
+                        />
+                        <button type="submit" className="connect-btn" style={{ padding: '6px 12px', fontSize: '13px', width: '100%' }}>
+                          Subscribe Email
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* BROWSER PUSH CHANNEL */}
+                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-page)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>🔔 Browser Push</h3>
+                          <span className={`status-badge ${userPrefs?.hasPushToken ? 'delivered' : 'failed'}`}>
+                            {userPrefs?.hasPushToken ? 'Subscribed' : 'Not Subscribed'}
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                          {userPrefs?.hasPushToken ? 'Active Web Push token registered in DB.' : 'No active web push token registered for this user ID.'}
+                        </p>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                          <input
+                            type="checkbox"
+                            id="pref-toggle-push"
+                            checked={userPrefs?.preferences?.find(p => p.channel === 'push')?.optedIn !== false}
+                            onChange={(e) => handleTogglePreference('push', e.target.checked)}
+                            disabled={!userPrefs?.hasPushToken}
+                            style={{ cursor: userPrefs?.hasPushToken ? 'pointer' : 'not-allowed' }}
+                          />
+                          <label htmlFor="pref-toggle-push" style={{ fontSize: '13px', fontWeight: 600, color: userPrefs?.hasPushToken ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.hasPushToken ? 'pointer' : 'not-allowed' }}>
+                            Opt-in to Push Channel
+                          </label>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={handlePushSubscribe}
+                        className="connect-btn"
+                        style={{ backgroundColor: 'var(--accent-success)', padding: '8px 12px', fontSize: '13px', width: '100%', marginTop: 'auto' }}
+                      >
+                        {userPrefs?.hasPushToken ? 'Re-Subscribe Browser' : 'Subscribe to Push'}
+                      </button>
+                    </div>
+
+                    {/* SMS / PHONE CHANNEL */}
+                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-page)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>📱 SMS</h3>
+                          <span className={`status-badge ${userPrefs?.phone ? 'delivered' : 'failed'}`}>
+                            {userPrefs?.phone ? 'Subscribed' : 'Not Subscribed'}
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                          {userPrefs?.phone ? `Registered: ${userPrefs.phone}` : 'No phone number registered for this user ID.'}
+                        </p>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                          <input
+                            type="checkbox"
+                            id="pref-toggle-sms"
+                            checked={userPrefs?.preferences?.find(p => p.channel === 'sms')?.optedIn !== false}
+                            onChange={(e) => handleTogglePreference('sms', e.target.checked)}
+                            disabled={!userPrefs?.phone}
+                            style={{ cursor: userPrefs?.phone ? 'pointer' : 'not-allowed' }}
+                          />
+                          <label htmlFor="pref-toggle-sms" style={{ fontSize: '13px', fontWeight: 600, color: userPrefs?.phone ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.phone ? 'pointer' : 'not-allowed' }}>
+                            Opt-in to SMS Channel
+                          </label>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handlePhoneSubscribe} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <input
+                          type="tel"
+                          className="api-key-input"
+                          style={{ width: '100%', padding: '6px 10px', fontSize: '13px' }}
+                          placeholder="Enter Phone Number"
+                          value={phoneInput}
+                          onChange={(e) => setPhoneInput(e.target.value)}
+                          required
+                        />
+                        <button type="submit" className="connect-btn" style={{ padding: '6px 12px', fontSize: '13px', width: '100%' }}>
+                          Subscribe SMS
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 )}
               </section>

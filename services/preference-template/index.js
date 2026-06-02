@@ -66,7 +66,16 @@ app.get('/v1/preferences/:userId', async (req, res) => {
 
     logger.info('User preferences cache MISS. Fetching from PostgreSQL...', { userId });
 
-    // 2. Query Postgres
+    // 2. Query user metadata from Postgres
+    const userQuery = `
+      SELECT email, phone, push_token 
+      FROM users 
+      WHERE id = $1
+    `;
+    const userResult = await dbPool.query(userQuery, [userId]);
+    const userRow = userResult.rows[0] || {};
+
+    // 3. Query preferences from Postgres
     const query = `
       SELECT channel, opted_in 
       FROM user_preferences 
@@ -74,7 +83,7 @@ app.get('/v1/preferences/:userId', async (req, res) => {
     `;
     const result = await dbPool.query(query, [userId]);
 
-    // 3. Defaults mapping (opted-in by default for email, sms, and push)
+    // 4. Defaults mapping (opted-in by default for email, sms, and push)
     const defaultPreferences = {
       email: true,
       sms: true,
@@ -90,13 +99,16 @@ app.get('/v1/preferences/:userId', async (req, res) => {
 
     const responsePayload = {
       userId,
+      email: userRow.email || null,
+      phone: userRow.phone || null,
+      hasPushToken: !!userRow.push_token,
       preferences: Object.keys(defaultPreferences).map(channel => ({
         channel,
         optedIn: defaultPreferences[channel]
       }))
     };
 
-    // 4. Cache in Redis with 5-minute TTL (300 seconds)
+    // 5. Cache in Redis with 5-minute TTL (300 seconds)
     await redisClient.set(redisKey, JSON.stringify(responsePayload), 'EX', 300);
     logger.debug('User preferences cached successfully', { userId, ttlSeconds: 300 });
 
@@ -212,10 +224,10 @@ app.post('/v1/preferences/:userId/push-token', async (req, res) => {
     });
   }
 
-  if (!dbPool) {
+  if (!dbPool || !redisClient) {
     return res.status(503).json({
       error: 'ServiceUnavailable',
-      message: 'Database connection is offline.'
+      message: 'Database/Cache connections are offline.'
     });
   }
 
@@ -230,7 +242,11 @@ app.post('/v1/preferences/:userId/push-token', async (req, res) => {
       [userId, tenantId, userId, tokenStr]
     );
 
-    logger.info('Successfully registered browser push subscription in PostgreSQL', { userId });
+    // Evict Redis Cache
+    const redisKey = KEYS.preference(userId);
+    await redisClient.del(redisKey);
+
+    logger.info('Successfully registered browser push subscription in PostgreSQL & evicted cache', { userId });
     return res.status(200).json({
       status: 'SUCCESS',
       message: 'Browser push subscription registered successfully.',
@@ -245,6 +261,136 @@ app.post('/v1/preferences/:userId/push-token', async (req, res) => {
     return res.status(500).json({
       error: 'InternalServerError',
       message: 'Failed to save push subscription.'
+    });
+  }
+});
+
+/**
+ * POST /v1/preferences/:userId/email
+ * Registers an email address inside PostgreSQL for the user.
+ */
+app.post('/v1/preferences/:userId/email', async (req, res) => {
+  const { userId } = req.params;
+  const { email } = req.body;
+  const tenantId = req.headers['x-tenant-id'];
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool || !redisClient) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database/Cache connections are offline.'
+    });
+  }
+
+  try {
+    await dbPool.query(
+      `INSERT INTO users (id, tenant_id, external_user_id, email)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) 
+       DO UPDATE SET email = EXCLUDED.email`,
+      [userId, tenantId, userId, email]
+    );
+
+    // Ensure they are opted-in for email preferences as well
+    await dbPool.query(
+      `INSERT INTO user_preferences (user_id, channel, opted_in, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, channel)
+       DO UPDATE SET opted_in = true, updated_at = NOW()`,
+      [userId, 'email', true]
+    );
+
+    // Evict Redis Cache
+    const redisKey = KEYS.preference(userId);
+    await redisClient.del(redisKey);
+
+    logger.info('Successfully registered user email in PostgreSQL & evicted cache', { userId, email });
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'User email registered and opted-in successfully.',
+      userId,
+      email
+    });
+  } catch (error) {
+    logger.error('Error saving user email', {
+      userId,
+      tenantId,
+      error: error.message
+    });
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to save email.'
+    });
+  }
+});
+
+/**
+ * POST /v1/preferences/:userId/phone
+ * Registers a phone number inside PostgreSQL for the user.
+ */
+app.post('/v1/preferences/:userId/phone', async (req, res) => {
+  const { userId } = req.params;
+  const { phone } = req.body;
+  const tenantId = req.headers['x-tenant-id'];
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool || !redisClient) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database/Cache connections are offline.'
+    });
+  }
+
+  try {
+    await dbPool.query(
+      `INSERT INTO users (id, tenant_id, external_user_id, phone)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) 
+       DO UPDATE SET phone = EXCLUDED.phone`,
+      [userId, tenantId, userId, phone]
+    );
+
+    // Ensure they are opted-in for SMS preferences as well
+    await dbPool.query(
+      `INSERT INTO user_preferences (user_id, channel, opted_in, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, channel)
+       DO UPDATE SET opted_in = true, updated_at = NOW()`,
+      [userId, 'sms', true]
+    );
+
+    // Evict Redis Cache
+    const redisKey = KEYS.preference(userId);
+    await redisClient.del(redisKey);
+
+    logger.info('Successfully registered user phone number in PostgreSQL & evicted cache', { userId, phone });
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: 'User phone number registered and opted-in successfully.',
+      userId,
+      phone
+    });
+  } catch (error) {
+    logger.error('Error saving user phone', {
+      userId,
+      tenantId,
+      error: error.message
+    });
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to save phone number.'
     });
   }
 });
