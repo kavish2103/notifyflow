@@ -21,6 +21,15 @@ export default function App() {
   const [newTenantKeyToShow, setNewTenantKeyToShow] = useState(null);
   const [showTenantModal, setShowTenantModal] = useState(false);
 
+  // Event Publisher States
+  const [publisherEventType, setPublisherEventType] = useState('payment.failed');
+  const [publisherUserId, setPublisherUserId] = useState('user-cust-99');
+  const [publisherPayloadName, setPublisherPayloadName] = useState('Kavish');
+  const [publisherPayloadAmount, setPublisherPayloadAmount] = useState('49.99');
+  const [publisherPayloadCustom, setPublisherPayloadCustom] = useState('{"reason": "Insufficient funds"}');
+  const [publisherStatus, setPublisherStatus] = useState(null);
+  const [publisherError, setPublisherError] = useState(null);
+
   // Poll metrics on a 5-second interval when connected
   useEffect(() => {
     if (isAdminMode) return;
@@ -174,6 +183,59 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert(`Tenant creation failed: ${err.message}`);
+    }
+  };
+
+  const handleFireEvent = async (e) => {
+    e.preventDefault();
+    setPublisherStatus(null);
+    setPublisherError(null);
+
+    let parsedPayload = {};
+    try {
+      if (publisherPayloadCustom.trim()) {
+        parsedPayload = JSON.parse(publisherPayloadCustom.trim());
+      }
+    } catch (err) {
+      setPublisherError('Invalid JSON in payload fields.');
+      return;
+    }
+
+    const payloadBody = {
+      name: publisherPayloadName,
+      amount: parseFloat(publisherPayloadAmount) || 0,
+      currency: 'USD',
+      ...parsedPayload
+    };
+
+    const payload = {
+      clientEventId: `client-txn-${Date.now()}`,
+      tenantId: metrics.tenantId,
+      userId: publisherUserId.trim(),
+      eventType: publisherEventType,
+      payload: payloadBody
+    };
+
+    try {
+      const res = await fetch('http://localhost:3000/v1/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || `Ingestion failed: ${res.statusText}`);
+      }
+
+      setPublisherStatus(`Successfully fired! Event ID: ${data.eventId}`);
+      fetchMetrics();
+    } catch (err) {
+      console.error(err);
+      setPublisherError(`Failed to fire event: ${err.message}`);
     }
   };
 
@@ -498,6 +560,95 @@ export default function App() {
           {/* Main Dashboard Visualizer Panel */}
           {isConnected && metrics && (
             <div>
+              {/* Event Publisher Panel */}
+              <section className="card" style={{ marginBottom: '24px' }}>
+                <h2>Event Ingestion Publisher (Live Demo)</h2>
+                <form onSubmit={handleFireEvent} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '16px', alignItems: 'end' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Event Type</label>
+                    <select
+                      className="api-key-input"
+                      style={{ width: '100%', padding: '8px' }}
+                      value={publisherEventType}
+                      onChange={(e) => setPublisherEventType(e.target.value)}
+                    >
+                      <option value="payment.failed">payment.failed</option>
+                      <option value="payment.success">payment.success</option>
+                      <option value="user.registered">user.registered</option>
+                      <option value="order.shipped">order.shipped</option>
+                      <option value="password.reset">password.reset</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>User ID (internal)</label>
+                    <input
+                      type="text"
+                      className="api-key-input"
+                      style={{ width: '100%' }}
+                      value={publisherUserId}
+                      onChange={(e) => setPublisherUserId(e.target.value)}
+                      placeholder="e.g. user-cust-99"
+                      required
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Name</label>
+                    <input
+                      type="text"
+                      className="api-key-input"
+                      style={{ width: '100%' }}
+                      value={publisherPayloadName}
+                      onChange={(e) => setPublisherPayloadName(e.target.value)}
+                      placeholder="Name"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Amount</label>
+                    <input
+                      type="text"
+                      className="api-key-input"
+                      style={{ width: '100%' }}
+                      value={publisherPayloadAmount}
+                      onChange={(e) => setPublisherPayloadAmount(e.target.value)}
+                      placeholder="49.99"
+                    />
+                  </div>
+
+                  <button type="submit" className="connect-btn" style={{ height: '38px' }}>
+                    Fire Event
+                  </button>
+                </form>
+
+                {/* Optional Custom JSON Payload Fields */}
+                <div style={{ marginTop: '12px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    Optional Custom Payload (JSON format)
+                  </label>
+                  <input
+                    type="text"
+                    className="api-key-input"
+                    style={{ width: '100%', fontFamily: 'monospace', fontSize: '13px' }}
+                    value={publisherPayloadCustom}
+                    onChange={(e) => setPublisherPayloadCustom(e.target.value)}
+                    placeholder='{"reason": "Insufficient funds", "invoiceId": "inv-88190"}'
+                  />
+                </div>
+
+                {publisherStatus && (
+                  <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'var(--status-delivered-bg)', color: 'var(--status-delivered-text)', borderRadius: '6px', fontSize: '13px', fontWeight: 600 }}>
+                    {publisherStatus}
+                  </div>
+                )}
+                {publisherError && (
+                  <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'var(--status-failed-bg)', color: 'var(--status-failed-text)', borderRadius: '6px', fontSize: '13px', fontWeight: 600 }}>
+                    {publisherError}
+                  </div>
+                )}
+              </section>
+
               {/* 2. Overview Stats Cards Grid */}
               <section className="stats-grid">
                 <div className="stat-card">
