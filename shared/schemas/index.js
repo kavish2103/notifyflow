@@ -164,13 +164,37 @@ function validateCreateTemplate(data) {
   return createTemplateSchema.safeParse(data);
 }
 
+/**
+ * 5. Register User Schema: Validates email, phone and externalUserId.
+ */
+const registerUserSchema = z.object({
+  externalUserId: z.string().min(1, "externalUserId cannot be empty").optional(),
+  email: z.string({
+    required_error: "email is required"
+  }).email("Must be a valid email address"),
+  phone: z.string({
+    required_error: "phone is required"
+  }).regex(/^\+[1-9]\d{9,14}$/, "Must match E.164 phone format")
+}).strict();
+
+/**
+ * Validates user registration payload.
+ * @param {object} data - User registration payload
+ * @returns {object} Zod safeParse result
+ */
+function validateRegisterUser(data) {
+  return registerUserSchema.safeParse(data);
+}
+
 module.exports = {
   clientEventSchema,
   eventEnvelopeSchema,
   updatePreferencesSchema,
   createTemplateSchema,
+  registerUserSchema,
   validateClientEvent,
   validateEventEnvelope,
   validateUpdatePreferences,
-  validateCreateTemplate
+  validateCreateTemplate,
+  validateRegisterUser
 };

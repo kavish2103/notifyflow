@@ -10,7 +10,7 @@ const cors = require('cors');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getRedisClient, KEYS } = require('@notifyflow/redis');
 const { getDbPool } = require('./db');
-const { validateUpdatePreferences, validateCreateTemplate } = require('@notifyflow/schemas');
+const { validateUpdatePreferences, validateCreateTemplate, validateRegisterUser } = require('@notifyflow/schemas');
 
 const app = express();
 const PORT = process.env.PREFERENCE_PORT || 3003;
@@ -46,7 +46,6 @@ app.get('/health', (req, res) => {
  */
 app.post('/v1/users', async (req, res) => {
   const tenantId = req.headers['x-tenant-id'];
-  const { externalUserId, email, phone } = req.body;
 
   if (!tenantId) {
     return res.status(401).json({
@@ -61,6 +60,18 @@ app.post('/v1/users', async (req, res) => {
       message: 'Database connection is offline.'
     });
   }
+
+  const validationResult = validateRegisterUser(req.body);
+  if (!validationResult.success) {
+    const error = validationResult.error.errors[0];
+    return res.status(400).json({
+      error: "ValidationError",
+      field: error.path.join('.'),
+      message: error.message
+    });
+  }
+
+  const { externalUserId, email, phone } = validationResult.data;
 
   try {
     // Generate a unique user ID prefixed with 'user-'
