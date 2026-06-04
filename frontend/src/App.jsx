@@ -24,6 +24,20 @@ export default function App() {
   // Event Publisher States
   const [publisherEventType, setPublisherEventType] = useState('payment.failed');
   const [eventTypes, setEventTypes] = useState([]);
+  
+  // Event Catalog States
+  const [showEventCatalogModal, setShowEventCatalogModal] = useState(false);
+  const [editingEventType, setEditingEventType] = useState(null);
+  const [modalEventTypeName, setModalEventTypeName] = useState('');
+  const [modalEventTypeDesc, setModalEventTypeDesc] = useState('');
+  const [modalConfigEmail, setModalConfigEmail] = useState(false);
+  const [modalConfigSms, setModalConfigSms] = useState(false);
+  const [modalConfigPush, setModalConfigPush] = useState(false);
+  const [modalEmailSubject, setModalEmailSubject] = useState('');
+  const [modalEmailBody, setModalEmailBody] = useState('');
+  const [modalSmsBody, setModalSmsBody] = useState('');
+  const [modalPushBody, setModalPushBody] = useState('');
+
   const [publisherUserId, setPublisherUserId] = useState('user-cust-99');
   const [publisherPayloadName, setPublisherPayloadName] = useState('Kavish');
   const [publisherPayloadAmount, setPublisherPayloadAmount] = useState('49.99');
@@ -254,6 +268,121 @@ export default function App() {
     } catch (err) {
       console.error(err);
       alert(`Failed to update preferences: ${err.message}`);
+    }
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingEventType(null);
+    setModalEventTypeName('');
+    setModalEventTypeDesc('');
+    setModalConfigEmail(false);
+    setModalConfigSms(false);
+    setModalConfigPush(false);
+    setModalEmailSubject('');
+    setModalEmailBody('');
+    setModalSmsBody('');
+    setModalPushBody('');
+    setShowEventCatalogModal(true);
+  };
+
+  const handleOpenEditModal = (et) => {
+    setEditingEventType(et);
+    setModalEventTypeName(et.eventType);
+    setModalEventTypeDesc(et.description || '');
+    
+    const emailTpl = et.templates?.email;
+    const smsTpl = et.templates?.sms;
+    const pushTpl = et.templates?.push;
+
+    setModalConfigEmail(!!emailTpl);
+    setModalEmailSubject(emailTpl?.subject || '');
+    setModalEmailBody(emailTpl?.body || '');
+
+    setModalConfigSms(!!smsTpl);
+    setModalSmsBody(smsTpl?.body || '');
+
+    setModalConfigPush(!!pushTpl);
+    setModalPushBody(pushTpl?.body || '');
+
+    setShowEventCatalogModal(true);
+  };
+
+  const handleSaveEventType = async (e) => {
+    e.preventDefault();
+    if (!modalEventTypeName.trim()) return;
+
+    const payload = {
+      eventType: modalEventTypeName.trim(),
+      description: modalEventTypeDesc.trim() || undefined
+    };
+
+    const templates = {};
+    if (modalConfigEmail) {
+      templates.email = {
+        subject: modalEmailSubject.trim() || undefined,
+        body: modalEmailBody
+      };
+    }
+    if (modalConfigSms) {
+      templates.sms = {
+        body: modalSmsBody
+      };
+    }
+    if (modalConfigPush) {
+      templates.push = {
+        body: modalPushBody
+      };
+    }
+
+    if (Object.keys(templates).length > 0 || editingEventType) {
+      payload.templates = templates;
+    }
+
+    try {
+      const res = await fetch('http://localhost:3000/v1/event-types', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || 'Failed to save event type');
+      }
+
+      alert('Event type and templates saved successfully!');
+      setShowEventCatalogModal(false);
+      fetchEventTypes();
+    } catch (err) {
+      console.error(err);
+      alert(`Error: ${err.message}`);
+    }
+  };
+
+  const handleDeleteEventType = async (eventTypeToDelete) => {
+    if (!confirm(`Are you sure you want to delete '${eventTypeToDelete}' and all its associated templates?`)) return;
+
+    try {
+      const res = await fetch(`http://localhost:3000/v1/event-types/${eventTypeToDelete}`, {
+        method: 'DELETE',
+        headers: {
+          'x-api-key': apiKey
+        }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || 'Failed to delete event type');
+      }
+
+      alert('Event type deleted successfully!');
+      fetchEventTypes();
+    } catch (err) {
+      console.error(err);
+      alert(`Error: ${err.message}`);
     }
   };
 
@@ -718,89 +847,87 @@ export default function App() {
               {/* Event Publisher Panel */}
               <section className="card" style={{ marginBottom: '24px' }}>
                 <h2>Event Ingestion Publisher (Live Demo)</h2>
-                <form onSubmit={handleFireEvent} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '16px', alignItems: 'end' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Event Type</label>
-                    <select
-                      className="api-key-input"
-                      style={{ width: '100%', padding: '8px' }}
-                      value={publisherEventType}
-                      onChange={(e) => setPublisherEventType(e.target.value)}
-                    >
-                      {eventTypes.length > 0 ? (
-                        eventTypes.map((et) => (
-                          <option key={et.id} value={et.eventType}>
-                            {et.eventType}
-                          </option>
-                        ))
-                      ) : (
-                        <>
-                          <option value="payment.failed">payment.failed</option>
-                          <option value="payment.success">payment.success</option>
-                          <option value="user.registered">user.registered</option>
-                          <option value="order.shipped">order.shipped</option>
-                          <option value="password.reset">password.reset</option>
-                        </>
-                      )}
-                    </select>
+                {eventTypes.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '30px 20px', color: 'var(--text-muted)', fontSize: '14px', border: '1px dashed var(--border-color)', borderRadius: '8px', backgroundColor: 'var(--bg-page)', margin: '10px 0' }}>
+                    Register event types in the Event Catalog before firing test events.
                   </div>
+                ) : (
+                  <>
+                    <form onSubmit={handleFireEvent} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '16px', alignItems: 'end' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Event Type</label>
+                        <select
+                          className="api-key-input"
+                          style={{ width: '100%', padding: '8px' }}
+                          value={publisherEventType}
+                          onChange={(e) => setPublisherEventType(e.target.value)}
+                        >
+                          {eventTypes.map((et) => (
+                            <option key={et.id} value={et.eventType}>
+                              {et.eventType}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>User ID (internal)</label>
-                    <input
-                      type="text"
-                      className="api-key-input"
-                      style={{ width: '100%' }}
-                      value={publisherUserId}
-                      onChange={(e) => setPublisherUserId(e.target.value)}
-                      placeholder="e.g. user-cust-99"
-                      required
-                    />
-                  </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>User ID (internal)</label>
+                        <input
+                          type="text"
+                          className="api-key-input"
+                          style={{ width: '100%' }}
+                          value={publisherUserId}
+                          onChange={(e) => setPublisherUserId(e.target.value)}
+                          placeholder="e.g. user-cust-99"
+                          required
+                        />
+                      </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Name</label>
-                    <input
-                      type="text"
-                      className="api-key-input"
-                      style={{ width: '100%' }}
-                      value={publisherPayloadName}
-                      onChange={(e) => setPublisherPayloadName(e.target.value)}
-                      placeholder="Name"
-                    />
-                  </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Name</label>
+                        <input
+                          type="text"
+                          className="api-key-input"
+                          style={{ width: '100%' }}
+                          value={publisherPayloadName}
+                          onChange={(e) => setPublisherPayloadName(e.target.value)}
+                          placeholder="Name"
+                        />
+                      </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Amount</label>
-                    <input
-                      type="text"
-                      className="api-key-input"
-                      style={{ width: '100%' }}
-                      value={publisherPayloadAmount}
-                      onChange={(e) => setPublisherPayloadAmount(e.target.value)}
-                      placeholder="49.99"
-                    />
-                  </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Amount</label>
+                        <input
+                          type="text"
+                          className="api-key-input"
+                          style={{ width: '100%' }}
+                          value={publisherPayloadAmount}
+                          onChange={(e) => setPublisherPayloadAmount(e.target.value)}
+                          placeholder="49.99"
+                        />
+                      </div>
 
-                  <button type="submit" className="connect-btn" style={{ height: '38px' }}>
-                    Fire Event
-                  </button>
-                </form>
+                      <button type="submit" className="connect-btn" style={{ height: '38px' }}>
+                        Fire Event
+                      </button>
+                    </form>
 
-                {/* Optional Custom JSON Payload Fields */}
-                <div style={{ marginTop: '12px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                    Optional Custom Payload (JSON format)
-                  </label>
-                  <input
-                    type="text"
-                    className="api-key-input"
-                    style={{ width: '100%', fontFamily: 'monospace', fontSize: '13px' }}
-                    value={publisherPayloadCustom}
-                    onChange={(e) => setPublisherPayloadCustom(e.target.value)}
-                    placeholder='{"reason": "Insufficient funds", "invoiceId": "inv-88190"}'
-                  />
-                </div>
+                    {/* Optional Custom JSON Payload Fields */}
+                    <div style={{ marginTop: '12px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                        Optional Custom Payload (JSON format)
+                      </label>
+                      <input
+                        type="text"
+                        className="api-key-input"
+                        style={{ width: '100%', fontFamily: 'monospace', fontSize: '13px' }}
+                        value={publisherPayloadCustom}
+                        onChange={(e) => setPublisherPayloadCustom(e.target.value)}
+                        placeholder='{"reason": "Insufficient funds", "invoiceId": "inv-88190"}'
+                      />
+                    </div>
+                  </>
+                )}
 
                 {publisherStatus && (
                   <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'var(--status-delivered-bg)', color: 'var(--status-delivered-text)', borderRadius: '6px', fontSize: '13px', fontWeight: 600 }}>
@@ -810,6 +937,66 @@ export default function App() {
                 {publisherError && (
                   <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: 'var(--status-failed-bg)', color: 'var(--status-failed-text)', borderRadius: '6px', fontSize: '13px', fontWeight: 600 }}>
                     {publisherError}
+                  </div>
+                )}
+              </section>
+
+              {/* Event Catalog Table Section */}
+              <section className="card" style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h2 style={{ borderBottom: 'none', margin: 0, padding: 0 }}>Event Catalog</h2>
+                  <button onClick={handleOpenAddModal} className="connect-btn" style={{ backgroundColor: 'var(--accent-primary)' }}>
+                    + Add Event Type
+                  </button>
+                </div>
+                {eventTypes.length === 0 ? (
+                  <div className="empty-state">No registered event types found in catalog. Add event types to get started.</div>
+                ) : (
+                  <div className="logs-table-container">
+                    <table className="logs-table">
+                      <thead>
+                        <tr>
+                          <th>Event Type</th>
+                          <th>Description</th>
+                          <th style={{ textAlign: 'center' }}>Email Template</th>
+                          <th style={{ textAlign: 'center' }}>SMS Template</th>
+                          <th style={{ textAlign: 'center' }}>Push Template</th>
+                          <th style={{ textAlign: 'center' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventTypes.map((et) => {
+                          const hasEmail = !!et.templates?.email;
+                          const hasSms = !!et.templates?.sms;
+                          const hasPush = !!et.templates?.push;
+                          return (
+                            <tr key={et.id}>
+                              <td style={{ fontWeight: 600, color: 'var(--text-dark)' }}>{et.eventType}</td>
+                              <td style={{ color: 'var(--text-muted)', fontSize: '13px' }}>{et.description || '—'}</td>
+                              <td style={{ textAlign: 'center', fontSize: '16px' }}>
+                                {hasEmail ? <span style={{ color: 'var(--accent-success)', fontWeight: 'bold' }}>✓</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                              </td>
+                              <td style={{ textAlign: 'center', fontSize: '16px' }}>
+                                {hasSms ? <span style={{ color: 'var(--accent-success)', fontWeight: 'bold' }}>✓</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                              </td>
+                              <td style={{ textAlign: 'center', fontSize: '16px' }}>
+                                {hasPush ? <span style={{ color: 'var(--accent-success)', fontWeight: 'bold' }}>✓</span> : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                  <button onClick={() => handleOpenEditModal(et)} className="connect-btn" style={{ padding: '4px 8px', fontSize: '12px' }}>
+                                    Edit
+                                  </button>
+                                  <button onClick={() => handleDeleteEventType(et.eventType)} className="connect-btn" style={{ padding: '4px 8px', fontSize: '12px', backgroundColor: 'var(--status-failed-text)' }}>
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </section>
@@ -1179,6 +1366,164 @@ export default function App() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Event Catalog Add/Edit Modal */}
+      {showEventCatalogModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.4)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          overflowY: 'auto',
+          padding: '20px'
+        }}>
+          <div className="card" style={{
+            width: '100%',
+            maxWidth: '600px',
+            margin: 'auto',
+            padding: '30px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <h2 style={{ borderBottom: 'none', marginTop: 0, paddingBottom: 0 }}>
+              {editingEventType ? `Edit Event Type: ${modalEventTypeName}` : 'Add New Event Type'}
+            </h2>
+            
+            <form onSubmit={handleSaveEventType} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Event Type Name</label>
+                <input
+                  type="text"
+                  className="api-key-input"
+                  style={{ width: '100%', padding: '8px 12px' }}
+                  placeholder="e.g. order.prepared"
+                  value={modalEventTypeName}
+                  onChange={(e) => setModalEventTypeName(e.target.value)}
+                  disabled={!!editingEventType}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Description (optional)</label>
+                <input
+                  type="text"
+                  className="api-key-input"
+                  style={{ width: '100%', padding: '8px 12px' }}
+                  placeholder="e.g. Triggered when the order has been prepared"
+                  value={modalEventTypeDesc}
+                  onChange={(e) => setModalEventTypeDesc(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>
+                  Configure Notification Templates
+                </label>
+
+                {/* Email Channel Config */}
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', marginBottom: '12px', backgroundColor: 'var(--bg-page)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="modal-config-email"
+                      checked={modalConfigEmail}
+                      onChange={(e) => setModalConfigEmail(e.target.checked)}
+                    />
+                    <label htmlFor="modal-config-email" style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>📧 Email Template</label>
+                  </div>
+                  {modalConfigEmail && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                      <input
+                        type="text"
+                        className="api-key-input"
+                        style={{ width: '100%', fontSize: '13px', padding: '8px 12px' }}
+                        placeholder="Subject Template (e.g. Order Prepared)"
+                        value={modalEmailSubject}
+                        onChange={(e) => setModalEmailSubject(e.target.value)}
+                      />
+                      <textarea
+                        className="api-key-input"
+                        style={{ width: '100%', fontSize: '13px', minHeight: '80px', fontFamily: 'monospace', padding: '8px 12px' }}
+                        placeholder="Body Template (Handlebars supported: {{name}}, {{amount}})"
+                        value={modalEmailBody}
+                        onChange={(e) => setModalEmailBody(e.target.value)}
+                        required={modalConfigEmail}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* SMS Channel Config */}
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', marginBottom: '12px', backgroundColor: 'var(--bg-page)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="modal-config-sms"
+                      checked={modalConfigSms}
+                      onChange={(e) => setModalConfigSms(e.target.checked)}
+                    />
+                    <label htmlFor="modal-config-sms" style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>📱 SMS Template</label>
+                  </div>
+                  {modalConfigSms && (
+                    <div style={{ marginTop: '8px' }}>
+                      <textarea
+                        className="api-key-input"
+                        style={{ width: '100%', fontSize: '13px', minHeight: '60px', fontFamily: 'monospace', padding: '8px 12px' }}
+                        placeholder="Body Template (Handlebars supported: {{name}}, {{amount}})"
+                        value={modalSmsBody}
+                        onChange={(e) => setModalSmsBody(e.target.value)}
+                        required={modalConfigSms}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Push Channel Config */}
+                <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: 'var(--bg-page)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <input
+                      type="checkbox"
+                      id="modal-config-push"
+                      checked={modalConfigPush}
+                      onChange={(e) => setModalConfigPush(e.target.checked)}
+                    />
+                    <label htmlFor="modal-config-push" style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>🔔 Browser Push Template</label>
+                  </div>
+                  {modalConfigPush && (
+                    <div style={{ marginTop: '8px' }}>
+                      <textarea
+                        className="api-key-input"
+                        style={{ width: '100%', fontSize: '13px', minHeight: '60px', fontFamily: 'monospace', padding: '8px 12px' }}
+                        placeholder="Body Template (Handlebars supported: {{name}}, {{amount}})"
+                        value={modalPushBody}
+                        onChange={(e) => setModalPushBody(e.target.value)}
+                        required={modalConfigPush}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <button type="button" onClick={() => setShowEventCatalogModal(false)} className="connect-btn" style={{ backgroundColor: 'var(--text-muted)' }}>
+                  Cancel
+                </button>
+                <button type="submit" className="connect-btn">
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
