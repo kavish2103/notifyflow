@@ -97,13 +97,16 @@ async function deliverPushEvent(payload) {
   const idempotencyKey = KEYS.idempotency('push', payload.eventId);
 
   // === STEP 1: Idempotency Check (MUST be executed first before everything else) ===
-  const isUnique = await redis.set(idempotencyKey, '1', 'NX', 'EX', 86400);
-  if (!isUnique) {
-    logger.info('Skipping push delivery: Duplicate event processed by Redis idempotency check', {
-      eventId: payload.eventId,
-      idempotencyKey
-    });
-    return; // Already processed, skip immediately
+  // Only execute idempotency checks on greenfield events (retryCount === 0) to allow retry attempts to bypass
+  if (!payload.retryCount || payload.retryCount === 0) {
+    const isUnique = await redis.set(idempotencyKey, '1', 'NX', 'EX', 86400);
+    if (!isUnique) {
+      logger.info('Skipping push delivery: Duplicate event processed by Redis idempotency check', {
+        eventId: payload.eventId,
+        idempotencyKey
+      });
+      return; // Already processed, skip immediately
+    }
   }
 
   // === STEP 2: Preference Check ===
