@@ -1,0 +1,17 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "watchPatterns": [
+      "services/api-gateway/**",
+      "shared/logger/**",
+      "shared/redis/**",
+      "shared/schemas/**",
+      "package*.json"
+    ]
+  },
+  "deploy": {
+    "startCommand": "node services/api-gateway/index.js",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
