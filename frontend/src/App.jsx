@@ -39,8 +39,7 @@ export default function App() {
   const [modalPushBody, setModalPushBody] = useState('');
 
   const [publisherUserId, setPublisherUserId] = useState('user-cust-99');
-  const [publisherPayloadName, setPublisherPayloadName] = useState('Kavish');
-  const [publisherPayloadAmount, setPublisherPayloadAmount] = useState('49.99');
+  const [publisherPayload, setPublisherPayload] = useState({});
   const [publisherPayloadCustom, setPublisherPayloadCustom] = useState('{"reason": "Insufficient funds"}');
   const [publisherStatus, setPublisherStatus] = useState(null);
   const [publisherError, setPublisherError] = useState(null);
@@ -50,6 +49,82 @@ export default function App() {
   const [emailInput, setEmailInput] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
   const [isPrefsLoading, setIsPrefsLoading] = useState(false);
+
+  const getRequiredVariables = () => {
+    const selectedEt = eventTypes.find(et => et.eventType === publisherEventType);
+    if (!selectedEt || !selectedEt.templates) {
+      return ['name', 'amount']; // default fallback
+    }
+
+    const variables = new Set();
+    const regex = /\{\{([^}]+)\}\}/g;
+    
+    const emailTpl = selectedEt.templates.email;
+    if (emailTpl) {
+      if (emailTpl.subject) {
+        let match;
+        const subRegex = /\{\{([^}]+)\}\}/g;
+        while ((match = subRegex.exec(emailTpl.subject)) !== null) {
+          variables.add(match[1].trim());
+        }
+      }
+      if (emailTpl.body) {
+        let match;
+        const bodyRegex = /\{\{([^}]+)\}\}/g;
+        while ((match = bodyRegex.exec(emailTpl.body)) !== null) {
+          variables.add(match[1].trim());
+        }
+      }
+    }
+
+    const smsTpl = selectedEt.templates.sms;
+    if (smsTpl && smsTpl.body) {
+      let match;
+      const smsRegex = /\{\{([^}]+)\}\}/g;
+      while ((match = smsRegex.exec(smsTpl.body)) !== null) {
+        variables.add(match[1].trim());
+      }
+    }
+
+    const pushTpl = selectedEt.templates.push;
+    if (pushTpl && pushTpl.body) {
+      let match;
+      const pushRegex = /\{\{([^}]+)\}\}/g;
+      while ((match = pushRegex.exec(pushTpl.body)) !== null) {
+        variables.add(match[1].trim());
+      }
+    }
+
+    return Array.from(variables);
+  };
+
+  // Sync publisher payload template fields dynamically
+  useEffect(() => {
+    const vars = getRequiredVariables();
+    const newPayload = {};
+    let customDefault = '';
+
+    vars.forEach(v => {
+      if (v === 'name') newPayload.name = 'Kavish';
+      else if (v === 'amount') newPayload.amount = '49.99';
+      else if (v === 'currency') newPayload.currency = 'USD';
+      else if (v === 'reason') newPayload.reason = 'Insufficient funds';
+      else if (v === 'billingUrl') newPayload.billingUrl = 'http://localhost:5173/billing';
+      else if (v === 'invoiceId') newPayload.invoiceId = 'inv-88190';
+      else newPayload[v] = '';
+    });
+
+    if (publisherEventType === 'payment.failed') {
+      customDefault = '{"reason": "Insufficient funds", "invoiceId": "inv-88190"}';
+    } else if (publisherEventType === 'order.prepared') {
+      customDefault = '{"description": "Your delicious meal has been prepared and is ready for pickup!"}';
+    } else {
+      customDefault = '{}';
+    }
+
+    setPublisherPayload(newPayload);
+    setPublisherPayloadCustom(customDefault);
+  }, [publisherEventType, eventTypes]);
 
   // Poll metrics on a 5-second interval when connected
   useEffect(() => {
@@ -489,11 +564,16 @@ export default function App() {
     }
 
     const payloadBody = {
-      name: publisherPayloadName,
-      amount: parseFloat(publisherPayloadAmount) || 0,
-      currency: 'USD',
+      ...publisherPayload,
       ...parsedPayload
     };
+
+    if (payloadBody.amount !== undefined && payloadBody.amount !== null) {
+      const parsedAmount = parseFloat(payloadBody.amount);
+      if (!isNaN(parsedAmount)) {
+        payloadBody.amount = parsedAmount;
+      }
+    }
 
     const payload = {
       clientEventId: `client-txn-${Date.now()}`,
@@ -566,6 +646,14 @@ export default function App() {
 
       // 3. Subscribe with the public VAPID key
       const publicVapidKey = 'BBPV-vkpRNEfuIrlGmxCXXUv86F09uLR4IGjk2wGJYzxQNPhRw0Zp9dMHfqHc5wnpOn03LW_3_SC4HiANX2W0Qg';
+      
+      // Unsubscribe existing stale subscriptions to guarantee a fresh token from push servers
+      const existingSubscription = await registration.pushManager.getSubscription();
+      if (existingSubscription) {
+        console.log('Unsubscribing existing stale push subscription...');
+        await existingSubscription.unsubscribe();
+      }
+
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicVapidKey)
@@ -883,29 +971,24 @@ export default function App() {
                         />
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Name</label>
-                        <input
-                          type="text"
-                          className="api-key-input"
-                          style={{ width: '100%' }}
-                          value={publisherPayloadName}
-                          onChange={(e) => setPublisherPayloadName(e.target.value)}
-                          placeholder="Name"
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Payload Amount</label>
-                        <input
-                          type="text"
-                          className="api-key-input"
-                          style={{ width: '100%' }}
-                          value={publisherPayloadAmount}
-                          onChange={(e) => setPublisherPayloadAmount(e.target.value)}
-                          placeholder="49.99"
-                        />
-                      </div>
+                      {Object.keys(publisherPayload).map((key) => (
+                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            {key === 'name' ? 'Payload Name' : (key === 'amount' ? 'Payload Amount' : key.charAt(0).toUpperCase() + key.slice(1))}
+                          </label>
+                          <input
+                            type="text"
+                            className="api-key-input"
+                            style={{ width: '100%', padding: '8px' }}
+                            value={publisherPayload[key] || ''}
+                            onChange={(e) => setPublisherPayload({
+                              ...publisherPayload,
+                              [key]: e.target.value
+                            })}
+                            placeholder={key}
+                          />
+                        </div>
+                      ))}
 
                       <button type="submit" className="connect-btn" style={{ height: '38px' }}>
                         Fire Event
