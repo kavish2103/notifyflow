@@ -15,7 +15,8 @@
     "@notifyflow/kafka": "^1.0.0",
     "@notifyflow/redis": "^1.0.0",
     "@notifyflow/schemas": "^1.0.0",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

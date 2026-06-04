@@ -11,6 +11,8 @@
     "kafkajs": "^2.2.4",
     "nodemailer": "^6.9.7",
     "handlebars": "^4.7.8",
+    "pg": "^8.11.3",
+    "dotenv": "^16.4.5",
     "@notifyflow/logger": "^1.0.0",
     "@notifyflow/kafka": "^1.0.0",
     "@notifyflow/redis": "^1.0.0",

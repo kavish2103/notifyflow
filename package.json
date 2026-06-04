@@ -24,8 +24,10 @@
     "dev:analytics": "npm run dev --workspace=services/analytics-consumer",
     "dev:frontend": "npm run dev --workspace=frontend"
   },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
   "devDependencies": {
-    "dotenv": "^16.4.5",
     "node-pg-migrate": "^6.2.2",
     "pg": "^8.11.3"
   }

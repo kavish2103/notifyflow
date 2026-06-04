@@ -12,6 +12,7 @@
     "cors": "^2.8.5",
     "kafkajs": "^2.2.4",
     "pg": "^8.11.3",
+    "dotenv": "^16.4.5",
     "@notifyflow/logger": "^1.0.0",
     "@notifyflow/kafka": "^1.0.0",
     "@notifyflow/redis": "^1.0.0",
