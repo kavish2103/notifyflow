@@ -741,7 +741,7 @@ export default function App() {
                 <button type="submit" className="connect-btn">Connect</button>
               </form>
             ) : (
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div className="auth-status-container">
                 {isLoading && <span className="loading-indicator">Updating...</span>}
                 <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-success)' }}>
                   ● Active Ingestion Stream
@@ -762,18 +762,17 @@ export default function App() {
       {isAdminMode ? (
         !isAdminConnected ? (
           /* Admin Login Screen */
-          <div className="card" style={{ textAlign: 'center', padding: '60px 40px', maxWidth: '500px', margin: '40px auto' }}>
-            <h2 style={{ borderBottom: 'none', marginBottom: '16px' }}>System Administrator Access</h2>
-            <form onSubmit={handleAdminConnect} style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'stretch' }}>
+          <div className="card landing-card">
+            <h2 className="no-border-title" style={{ marginBottom: '16px' }}>System Administrator Access</h2>
+            <form onSubmit={handleAdminConnect} className="vertical-form" style={{ gap: '16px' }}>
               <input
                 type="password"
                 className="api-key-input"
-                style={{ width: '100%', padding: '10px 14px' }}
                 placeholder="Enter Administrator Password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
               />
-              <button type="submit" className="connect-btn" style={{ width: '100%', padding: '10px' }}>
+              <button type="submit" className="connect-btn">
                 Verify & Log In
               </button>
             </form>
@@ -842,32 +841,30 @@ export default function App() {
               {/* Create Tenant Form */}
               <div className="card">
                 <h2>Register New B2B Tenant</h2>
-                <form onSubmit={handleCreateTenant} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Tenant Organization Name</label>
+                <form onSubmit={handleCreateTenant} className="vertical-form" style={{ gap: '12px' }}>
+                  <div className="form-group">
+                    <label>Tenant Organization Name</label>
                     <input
                       type="text"
                       className="api-key-input"
-                      style={{ width: '100%' }}
                       placeholder="e.g. Acme Corp"
                       value={newTenantName}
                       onChange={(e) => setNewTenantName(e.target.value)}
                       required
                     />
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Rate Limit (Requests / Min)</label>
+                  <div className="form-group">
+                    <label>Rate Limit (Requests / Min)</label>
                     <input
                       type="number"
                       className="api-key-input"
-                      style={{ width: '100%' }}
                       placeholder="60"
                       value={newTenantRateLimit}
                       onChange={(e) => setNewTenantRateLimit(e.target.value)}
                       required
                     />
                   </div>
-                  <button type="submit" className="connect-btn" style={{ marginTop: '8px' }}>
+                  <button type="submit" className="connect-btn">
                     Generate Cryptographic Credentials
                   </button>
                 </form>
@@ -913,12 +910,12 @@ export default function App() {
         <div>
           {/* Landing Placeholder when unconnected */}
           {!isConnected && (
-            <div className="card" style={{ textAlign: 'center', padding: '60px 40px' }}>
-              <h2 style={{ borderBottom: 'none', marginBottom: '8px' }}>Secure B2B Analytics Gate</h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '480px', margin: '0 auto 24px' }}>
+            <div className="card landing-card">
+              <h2 className="no-border-title">Secure B2B Analytics Gate</h2>
+              <p className="landing-desc">
                 Please connect using a valid NotifyFlow cryptographic API key to view the multi-tenant metrics feed and real-time delivery outcomes.
               </p>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              <div className="landing-note">
                 Seeded Test Key is entered by default above. Simply click <strong>Connect</strong> to begin.
               </div>
               <div style={{ marginTop: '24px' }}>
@@ -941,12 +938,11 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <form onSubmit={handleFireEvent} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '16px', alignItems: 'end' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>Event Type</label>
+                    <form onSubmit={handleFireEvent} className="publisher-form">
+                      <div className="form-group">
+                        <label>Event Type</label>
                         <select
                           className="api-key-input"
-                          style={{ width: '100%', padding: '8px' }}
                           value={publisherEventType}
                           onChange={(e) => setPublisherEventType(e.target.value)}
                         >
@@ -958,12 +954,11 @@ export default function App() {
                         </select>
                       </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>User ID (internal)</label>
+                      <div className="form-group">
+                        <label>User ID (internal)</label>
                         <input
                           type="text"
                           className="api-key-input"
-                          style={{ width: '100%' }}
                           value={publisherUserId}
                           onChange={(e) => setPublisherUserId(e.target.value)}
                           placeholder="e.g. user-cust-99"
@@ -972,14 +967,13 @@ export default function App() {
                       </div>
 
                       {Object.keys(publisherPayload).map((key) => (
-                        <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        <div key={key} className="form-group">
+                          <label>
                             {key === 'name' ? 'Payload Name' : (key === 'amount' ? 'Payload Amount' : key.charAt(0).toUpperCase() + key.slice(1))}
                           </label>
                           <input
                             type="text"
                             className="api-key-input"
-                            style={{ width: '100%', padding: '8px' }}
                             value={publisherPayload[key] || ''}
                             onChange={(e) => setPublisherPayload({
                               ...publisherPayload,
@@ -990,7 +984,7 @@ export default function App() {
                         </div>
                       ))}
 
-                      <button type="submit" className="connect-btn" style={{ height: '38px' }}>
+                      <button type="submit" className="connect-btn" style={{ height: '38px', width: '100%' }}>
                         Fire Event
                       </button>
                     </form>
@@ -1026,9 +1020,9 @@ export default function App() {
 
               {/* Event Catalog Table Section */}
               <section className="card" style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h2 style={{ borderBottom: 'none', margin: 0, padding: 0 }}>Event Catalog</h2>
-                  <button onClick={handleOpenAddModal} className="connect-btn" style={{ backgroundColor: 'var(--accent-primary)' }}>
+                <div className="card-header no-border">
+                  <h2>Event Catalog</h2>
+                  <button onClick={handleOpenAddModal} className="connect-btn">
                     + Add Event Type
                   </button>
                 </div>
@@ -1086,11 +1080,9 @@ export default function App() {
 
               {/* User Subscription & Preferences Card */}
               <section className="card" style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-                  <h2 style={{ borderBottom: 'none', margin: 0, padding: 0 }}>
-                    User Preferences & Channel Subscriptions
-                  </h2>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div className="card-header">
+                  <h2>User Preferences & Channel Subscriptions</h2>
+                  <div className="card-header-actions">
                     <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Target User:</span>
                     <span className="status-badge" style={{ backgroundColor: 'var(--accent-primary)', color: 'white', textTransform: 'none', fontSize: '13px', padding: '4px 10px' }}>
                       {publisherUserId}
@@ -1101,22 +1093,22 @@ export default function App() {
                 {isPrefsLoading && !userPrefs ? (
                   <div className="empty-state">Loading user subscription status...</div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+                  <div className="preferences-grid">
                     {/* EMAIL CHANNEL */}
-                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-page)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div className="preference-channel-card">
                       <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>📧 Email</h3>
+                        <div className="preference-channel-header">
+                          <h3>📧 Email</h3>
                           <span className={`status-badge ${userPrefs?.email ? 'delivered' : 'failed'}`}>
                             {userPrefs?.email ? 'Subscribed' : 'Not Subscribed'}
                           </span>
                         </div>
 
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                        <p className="preference-channel-desc">
                           {userPrefs?.email ? `Registered: ${userPrefs.email}` : 'No email address registered for this user ID.'}
                         </p>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                        <div className="preference-channel-optin">
                           <input
                             type="checkbox"
                             id="pref-toggle-email"
@@ -1125,43 +1117,42 @@ export default function App() {
                             disabled={!userPrefs?.email}
                             style={{ cursor: userPrefs?.email ? 'pointer' : 'not-allowed' }}
                           />
-                          <label htmlFor="pref-toggle-email" style={{ fontSize: '13px', fontWeight: 600, color: userPrefs?.email ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.email ? 'pointer' : 'not-allowed' }}>
+                          <label htmlFor="pref-toggle-email" style={{ color: userPrefs?.email ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.email ? 'pointer' : 'not-allowed' }}>
                             Opt-in to Email Channel
                           </label>
                         </div>
                       </div>
 
-                      <form onSubmit={handleEmailSubscribe} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <form onSubmit={handleEmailSubscribe} className="vertical-form">
                         <input
                           type="email"
                           className="api-key-input"
-                          style={{ width: '100%', padding: '6px 10px', fontSize: '13px' }}
                           placeholder="Enter Email Address"
                           value={emailInput}
                           onChange={(e) => setEmailInput(e.target.value)}
                           required
                         />
-                        <button type="submit" className="connect-btn" style={{ padding: '6px 12px', fontSize: '13px', width: '100%' }}>
+                        <button type="submit" className="connect-btn">
                           Subscribe Email
                         </button>
                       </form>
                     </div>
 
                     {/* BROWSER PUSH CHANNEL */}
-                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-page)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div className="preference-channel-card">
                       <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>🔔 Browser Push</h3>
+                        <div className="preference-channel-header">
+                          <h3>🔔 Browser Push</h3>
                           <span className={`status-badge ${userPrefs?.hasPushToken ? 'delivered' : 'failed'}`}>
                             {userPrefs?.hasPushToken ? 'Subscribed' : 'Not Subscribed'}
                           </span>
                         </div>
 
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                        <p className="preference-channel-desc">
                           {userPrefs?.hasPushToken ? 'Active Web Push token registered in DB.' : 'No active web push token registered for this user ID.'}
                         </p>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                        <div className="preference-channel-optin">
                           <input
                             type="checkbox"
                             id="pref-toggle-push"
@@ -1170,7 +1161,7 @@ export default function App() {
                             disabled={!userPrefs?.hasPushToken}
                             style={{ cursor: userPrefs?.hasPushToken ? 'pointer' : 'not-allowed' }}
                           />
-                          <label htmlFor="pref-toggle-push" style={{ fontSize: '13px', fontWeight: 600, color: userPrefs?.hasPushToken ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.hasPushToken ? 'pointer' : 'not-allowed' }}>
+                          <label htmlFor="pref-toggle-push" style={{ color: userPrefs?.hasPushToken ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.hasPushToken ? 'pointer' : 'not-allowed' }}>
                             Opt-in to Push Channel
                           </label>
                         </div>
@@ -1179,27 +1170,27 @@ export default function App() {
                       <button
                         onClick={handlePushSubscribe}
                         className="connect-btn"
-                        style={{ backgroundColor: 'var(--accent-success)', padding: '8px 12px', fontSize: '13px', width: '100%', marginTop: 'auto' }}
+                        style={{ backgroundColor: 'var(--accent-success)', marginTop: 'auto' }}
                       >
                         {userPrefs?.hasPushToken ? 'Re-Subscribe Browser' : 'Subscribe to Push'}
                       </button>
                     </div>
 
                     {/* SMS / PHONE CHANNEL */}
-                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backgroundColor: 'var(--bg-page)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div className="preference-channel-card">
                       <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-dark)' }}>📱 SMS</h3>
+                        <div className="preference-channel-header">
+                          <h3>📱 SMS</h3>
                           <span className={`status-badge ${userPrefs?.phone ? 'delivered' : 'failed'}`}>
                             {userPrefs?.phone ? 'Subscribed' : 'Not Subscribed'}
                           </span>
                         </div>
 
-                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                        <p className="preference-channel-desc">
                           {userPrefs?.phone ? `Registered: ${userPrefs.phone}` : 'No phone number registered for this user ID.'}
                         </p>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px' }}>
+                        <div className="preference-channel-optin">
                           <input
                             type="checkbox"
                             id="pref-toggle-sms"
@@ -1208,23 +1199,22 @@ export default function App() {
                             disabled={!userPrefs?.phone}
                             style={{ cursor: userPrefs?.phone ? 'pointer' : 'not-allowed' }}
                           />
-                          <label htmlFor="pref-toggle-sms" style={{ fontSize: '13px', fontWeight: 600, color: userPrefs?.phone ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.phone ? 'pointer' : 'not-allowed' }}>
+                          <label htmlFor="pref-toggle-sms" style={{ color: userPrefs?.phone ? 'var(--text-main)' : 'var(--text-muted)', cursor: userPrefs?.phone ? 'pointer' : 'not-allowed' }}>
                             Opt-in to SMS Channel
                           </label>
                         </div>
                       </div>
 
-                      <form onSubmit={handlePhoneSubscribe} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <form onSubmit={handlePhoneSubscribe} className="vertical-form">
                         <input
                           type="tel"
                           className="api-key-input"
-                          style={{ width: '100%', padding: '6px 10px', fontSize: '13px' }}
                           placeholder="Enter Phone Number"
                           value={phoneInput}
                           onChange={(e) => setPhoneInput(e.target.value)}
                           required
                         />
-                        <button type="submit" className="connect-btn" style={{ padding: '6px 12px', fontSize: '13px', width: '100%' }}>
+                        <button type="submit" className="connect-btn">
                           Subscribe SMS
                         </button>
                       </form>
@@ -1406,28 +1396,16 @@ export default function App() {
       {showTenantModal && newTenantKeyToShow && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h2 style={{ color: 'var(--accent-success)', borderBottom: 'none', marginBottom: '8px', fontSize: '18px', fontWeight: 700 }}>
+            <h2 className="modal-success-title">
               Tenant Registered Successfully!
             </h2>
-            <p style={{ color: 'var(--text-main)', fontSize: '14px', marginBottom: '16px' }}>
+            <p className="modal-desc">
               Save this key — it will not be shown again:
             </p>
-            <div style={{
-              background: '#f1f3f5',
-              padding: '12px',
-              borderRadius: '6px',
-              fontFamily: 'monospace',
-              wordBreak: 'break-all',
-              marginBottom: '16px',
-              border: '1px solid #dee2e6',
-              fontSize: '13px',
-              fontWeight: 600,
-              color: '#0b7285',
-              textAlign: 'center'
-            }}>
+            <div className="modal-key-display">
               {newTenantKeyToShow}
             </div>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <div className="modal-actions">
               <button
                 className="connect-btn"
                 style={{ backgroundColor: 'var(--accent-success)' }}
@@ -1455,40 +1433,18 @@ export default function App() {
 
       {/* Event Catalog Add/Edit Modal */}
       {showEventCatalogModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.4)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-          overflowY: 'auto',
-          padding: '20px'
-        }}>
-          <div className="card" style={{
-            width: '100%',
-            maxWidth: '600px',
-            margin: 'auto',
-            padding: '30px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-            maxHeight: '90vh',
-            overflowY: 'auto'
-          }}>
-            <h2 style={{ borderBottom: 'none', marginTop: 0, paddingBottom: 0 }}>
+        <div className="modal-overlay">
+          <div className="modal-content large">
+            <h2 className="no-border-title">
               {editingEventType ? `Edit Event Type: ${modalEventTypeName}` : 'Add New Event Type'}
             </h2>
             
-            <form onSubmit={handleSaveEventType} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Event Type Name</label>
+            <form onSubmit={handleSaveEventType} className="vertical-form" style={{ marginTop: '16px' }}>
+              <div className="form-group">
+                <label>Event Type Name</label>
                 <input
                   type="text"
                   className="api-key-input"
-                  style={{ width: '100%', padding: '8px 12px' }}
                   placeholder="e.g. order.prepared"
                   value={modalEventTypeName}
                   onChange={(e) => setModalEventTypeName(e.target.value)}
@@ -1497,12 +1453,11 @@ export default function App() {
                 />
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)' }}>Description (optional)</label>
+              <div className="form-group">
+                <label>Description (optional)</label>
                 <input
                   type="text"
                   className="api-key-input"
-                  style={{ width: '100%', padding: '8px 12px' }}
                   placeholder="e.g. Triggered when the order has been prepared"
                   value={modalEventTypeDesc}
                   onChange={(e) => setModalEventTypeDesc(e.target.value)}
@@ -1515,29 +1470,28 @@ export default function App() {
                 </label>
 
                 {/* Email Channel Config */}
-                <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', marginBottom: '12px', backgroundColor: 'var(--bg-page)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div className="template-config-box">
+                  <div className="checkbox-group">
                     <input
                       type="checkbox"
                       id="modal-config-email"
                       checked={modalConfigEmail}
                       onChange={(e) => setModalConfigEmail(e.target.checked)}
                     />
-                    <label htmlFor="modal-config-email" style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>📧 Email Template</label>
+                    <label htmlFor="modal-config-email">📧 Email Template</label>
                   </div>
                   {modalConfigEmail && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                    <div className="vertical-form" style={{ marginTop: '8px' }}>
                       <input
                         type="text"
                         className="api-key-input"
-                        style={{ width: '100%', fontSize: '13px', padding: '8px 12px' }}
                         placeholder="Subject Template (e.g. Order Prepared)"
                         value={modalEmailSubject}
                         onChange={(e) => setModalEmailSubject(e.target.value)}
                       />
                       <textarea
                         className="api-key-input"
-                        style={{ width: '100%', fontSize: '13px', minHeight: '80px', fontFamily: 'monospace', padding: '8px 12px' }}
+                        style={{ minHeight: '80px', fontFamily: 'monospace' }}
                         placeholder="Body Template (Handlebars supported: {{name}}, {{amount}})"
                         value={modalEmailBody}
                         onChange={(e) => setModalEmailBody(e.target.value)}
@@ -1548,21 +1502,21 @@ export default function App() {
                 </div>
 
                 {/* SMS Channel Config */}
-                <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', marginBottom: '12px', backgroundColor: 'var(--bg-page)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div className="template-config-box">
+                  <div className="checkbox-group">
                     <input
                       type="checkbox"
                       id="modal-config-sms"
                       checked={modalConfigSms}
                       onChange={(e) => setModalConfigSms(e.target.checked)}
                     />
-                    <label htmlFor="modal-config-sms" style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>📱 SMS Template</label>
+                    <label htmlFor="modal-config-sms">📱 SMS Template</label>
                   </div>
                   {modalConfigSms && (
                     <div style={{ marginTop: '8px' }}>
                       <textarea
                         className="api-key-input"
-                        style={{ width: '100%', fontSize: '13px', minHeight: '60px', fontFamily: 'monospace', padding: '8px 12px' }}
+                        style={{ minHeight: '60px', fontFamily: 'monospace' }}
                         placeholder="Body Template (Handlebars supported: {{name}}, {{amount}})"
                         value={modalSmsBody}
                         onChange={(e) => setModalSmsBody(e.target.value)}
@@ -1573,21 +1527,21 @@ export default function App() {
                 </div>
 
                 {/* Push Channel Config */}
-                <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', backgroundColor: 'var(--bg-page)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div className="template-config-box">
+                  <div className="checkbox-group">
                     <input
                       type="checkbox"
                       id="modal-config-push"
                       checked={modalConfigPush}
                       onChange={(e) => setModalConfigPush(e.target.checked)}
                     />
-                    <label htmlFor="modal-config-push" style={{ fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>🔔 Browser Push Template</label>
+                    <label htmlFor="modal-config-push">🔔 Browser Push Template</label>
                   </div>
                   {modalConfigPush && (
                     <div style={{ marginTop: '8px' }}>
                       <textarea
                         className="api-key-input"
-                        style={{ width: '100%', fontSize: '13px', minHeight: '60px', fontFamily: 'monospace', padding: '8px 12px' }}
+                        style={{ minHeight: '60px', fontFamily: 'monospace' }}
                         placeholder="Body Template (Handlebars supported: {{name}}, {{amount}})"
                         value={modalPushBody}
                         onChange={(e) => setModalPushBody(e.target.value)}
@@ -1598,7 +1552,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px' }}>
+              <div className="modal-actions" style={{ marginTop: '10px' }}>
                 <button type="button" onClick={() => setShowEventCatalogModal(false)} className="connect-btn" style={{ backgroundColor: 'var(--text-muted)' }}>
                   Cancel
                 </button>
