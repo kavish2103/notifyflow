@@ -10,7 +10,7 @@ const cors = require('cors');
 const { logger, expressLoggerMiddleware } = require('@notifyflow/logger');
 const { getRedisClient, KEYS } = require('@notifyflow/redis');
 const { getDbPool } = require('./db');
-const { validateUpdatePreferences, validateCreateTemplate, validateRegisterUser } = require('@notifyflow/schemas');
+const { validateUpdatePreferences, validateCreateTemplate, validateRegisterUser, validateCreateEventType } = require('@notifyflow/schemas');
 
 const app = express();
 const PORT = process.env.PREFERENCE_PORT || 3003;
@@ -122,6 +122,230 @@ app.post('/v1/users', async (req, res) => {
       error: 'InternalServerError',
       message: 'Failed to register user.'
     });
+  }
+});
+
+/**
+ * POST /v1/event-types
+ * Registers a new event type under the current B2B tenant scope, along with optional templates in a transaction.
+ */
+app.post('/v1/event-types', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'];
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database connection is offline.'
+    });
+  }
+
+  const validationResult = validateCreateEventType(req.body);
+  if (!validationResult.success) {
+    const error = validationResult.error.errors[0];
+    return res.status(400).json({
+      error: "ValidationError",
+      field: error.path.join('.'),
+      message: error.message
+    });
+  }
+
+  const { eventType, description, templates } = validationResult.data;
+
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Upsert event_types record
+    const etQuery = `
+      INSERT INTO event_types (tenant_id, event_type, description)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (tenant_id, event_type) 
+      DO UPDATE SET description = EXCLUDED.description
+      RETURNING id, tenant_id as "tenantId", event_type as "eventType", description, created_at as "createdAt"
+    `;
+    const etResult = await client.query(etQuery, [tenantId, eventType, description || null]);
+    const createdRecord = etResult.rows[0];
+
+    // 2. Clear and sync template records if templates are explicitly supplied
+    if (templates !== undefined) {
+      await client.query(
+        'DELETE FROM notification_templates WHERE tenant_id = $1 AND event_type = $2',
+        [tenantId, eventType]
+      );
+
+      for (const [channel, tpl] of Object.entries(templates)) {
+        if (tpl && tpl.body) {
+          const subject = channel === 'email' ? (tpl.subject || '') : null;
+          await client.query(
+            `INSERT INTO notification_templates (tenant_id, event_type, channel, subject_template, body_template)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [tenantId, eventType, channel, subject, tpl.body]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    logger.info('Registered event type and templates successfully', { tenantId, eventType });
+
+    return res.status(201).json({
+      status: 'SUCCESS',
+      message: 'Event type and templates registered successfully.',
+      eventType: {
+        ...createdRecord,
+        templates: templates || {}
+      }
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('Error registering event type and templates', {
+      tenantId,
+      eventType,
+      error: error.message
+    });
+
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to register event type.'
+    });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * GET /v1/event-types
+ * Returns all event types registered by the current B2B tenant with template details.
+ */
+app.get('/v1/event-types', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'];
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database connection is offline.'
+    });
+  }
+
+  try {
+    const query = `
+      SELECT 
+        et.id,
+        et.tenant_id as "tenantId",
+        et.event_type as "eventType",
+        et.description,
+        et.created_at as "createdAt",
+        COALESCE(
+          jsonb_object_agg(
+            nt.channel, 
+            jsonb_build_object(
+              'subject', nt.subject_template, 
+              'body', nt.body_template
+            )
+          ) FILTER (WHERE nt.channel IS NOT NULL), 
+          '{}'::jsonb
+        ) as "templates"
+      FROM event_types et
+      LEFT JOIN notification_templates nt ON et.tenant_id = nt.tenant_id AND et.event_type = nt.event_type
+      WHERE et.tenant_id = $1
+      GROUP BY et.id, et.tenant_id, et.event_type, et.description, et.created_at
+      ORDER BY et.event_type ASC
+    `;
+    const result = await dbPool.query(query, [tenantId]);
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      eventTypes: result.rows
+    });
+  } catch (error) {
+    logger.error('Error fetching event types', {
+      tenantId,
+      error: error.message
+    });
+
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to retrieve event types.'
+    });
+  }
+});
+
+/**
+ * DELETE /v1/event-types/:eventType
+ * Deletes a registered event type and all its associated templates for this B2B tenant.
+ */
+app.delete('/v1/event-types/:eventType', async (req, res) => {
+  const tenantId = req.headers['x-tenant-id'];
+  const { eventType } = req.params;
+
+  if (!tenantId) {
+    return res.status(401).json({
+      error: 'Unauthorized',
+      message: 'Missing B2B Tenant Identity header x-tenant-id'
+    });
+  }
+
+  if (!dbPool) {
+    return res.status(503).json({
+      error: 'ServiceUnavailable',
+      message: 'Database connection is offline.'
+    });
+  }
+
+  const client = await dbPool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Delete associated templates
+    await client.query(
+      'DELETE FROM notification_templates WHERE tenant_id = $1 AND event_type = $2',
+      [tenantId, eventType]
+    );
+
+    // 2. Delete event type
+    const result = await client.query(
+      'DELETE FROM event_types WHERE tenant_id = $1 AND event_type = $2 RETURNING id',
+      [tenantId, eventType]
+    );
+
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({
+        error: 'NotFoundError',
+        message: `Event type '${eventType}' not found.`
+      });
+    }
+
+    await client.query('COMMIT');
+    logger.info('Deleted event type and associated templates successfully', { tenantId, eventType });
+
+    return res.status(200).json({
+      status: 'SUCCESS',
+      message: `Event type '${eventType}' and all its associated templates have been deleted.`
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    logger.error('Error deleting event type', { tenantId, eventType, error: error.message });
+    return res.status(500).json({
+      error: 'InternalServerError',
+      message: 'Failed to delete event type.'
+    });
+  } finally {
+    client.release();
   }
 });
 

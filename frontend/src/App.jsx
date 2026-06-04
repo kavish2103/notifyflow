@@ -23,6 +23,7 @@ export default function App() {
 
   // Event Publisher States
   const [publisherEventType, setPublisherEventType] = useState('payment.failed');
+  const [eventTypes, setEventTypes] = useState([]);
   const [publisherUserId, setPublisherUserId] = useState('user-cust-99');
   const [publisherPayloadName, setPublisherPayloadName] = useState('Kavish');
   const [publisherPayloadAmount, setPublisherPayloadAmount] = useState('49.99');
@@ -43,6 +44,16 @@ export default function App() {
 
     fetchMetrics();
     const interval = setInterval(fetchMetrics, 5000);
+    return () => clearInterval(interval);
+  }, [isConnected, apiKey, isAdminMode]);
+
+  // Poll event types on a 10-second interval when connected
+  useEffect(() => {
+    if (isAdminMode) return;
+    if (!isConnected || !apiKey) return;
+
+    fetchEventTypes();
+    const interval = setInterval(fetchEventTypes, 10000);
     return () => clearInterval(interval);
   }, [isConnected, apiKey, isAdminMode]);
 
@@ -112,6 +123,33 @@ export default function App() {
       setError('Connection failed. Please check your B2B API Key or backend services.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchEventTypes = async () => {
+    if (!isConnected || !apiKey) return;
+    try {
+      const res = await fetch('http://localhost:3000/v1/event-types', {
+        headers: {
+          'x-api-key': apiKey
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch event types: Status ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.status === 'SUCCESS' && Array.isArray(data.eventTypes)) {
+        setEventTypes(data.eventTypes);
+        // Default to first registered event type if current selection is not in the list
+        if (data.eventTypes.length > 0) {
+          const names = data.eventTypes.map(e => e.eventType);
+          if (!names.includes(publisherEventType)) {
+            setPublisherEventType(names[0]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching event types:', err);
     }
   };
 
@@ -448,7 +486,7 @@ export default function App() {
       {/* 1. Header and Auth Section */}
       <header className="dashboard-header">
         <div className="brand-section">
-          <h1>{isAdminMode ? 'NotifyFlow Admin' : 'NotifyFlow'}</h1>
+          <h1>{isAdminMode ? 'NotifyFlow Sandbox Admin' : 'NotifyFlow Sandbox'}</h1>
           <p>{isAdminMode ? 'System-Wide Operations & Tenant Management' : 'Real-Time Distributed B2B Notification Dashboard'}</p>
         </div>
 
@@ -689,11 +727,21 @@ export default function App() {
                       value={publisherEventType}
                       onChange={(e) => setPublisherEventType(e.target.value)}
                     >
-                      <option value="payment.failed">payment.failed</option>
-                      <option value="payment.success">payment.success</option>
-                      <option value="user.registered">user.registered</option>
-                      <option value="order.shipped">order.shipped</option>
-                      <option value="password.reset">password.reset</option>
+                      {eventTypes.length > 0 ? (
+                        eventTypes.map((et) => (
+                          <option key={et.id} value={et.eventType}>
+                            {et.eventType}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="payment.failed">payment.failed</option>
+                          <option value="payment.success">payment.success</option>
+                          <option value="user.registered">user.registered</option>
+                          <option value="order.shipped">order.shipped</option>
+                          <option value="password.reset">password.reset</option>
+                        </>
+                      )}
                     </select>
                   </div>
 

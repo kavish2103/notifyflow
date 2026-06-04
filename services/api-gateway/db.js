@@ -21,7 +21,7 @@ function getDbPool() {
     connectionString,
     max: 10, // Keep connection pool count tight since gateway logic is primarily in-memory
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000
+    connectionTimeoutMillis: 5000
   });
 
   pool.on('error', (err) => {

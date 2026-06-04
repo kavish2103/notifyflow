@@ -186,15 +186,48 @@ function validateRegisterUser(data) {
   return registerUserSchema.safeParse(data);
 }
 
+/**
+ * 6. Create Event Type Schema: Validates tenant-registered event types.
+ */
+const createEventTypeSchema = z.object({
+  eventType: z.string({
+    required_error: "eventType is required"
+  }).min(1, "eventType cannot be empty"),
+  description: z.string().optional(),
+  templates: z.object({
+    email: z.object({
+      subject: z.string().max(255).optional(),
+      body: z.string().min(1, "Email body cannot be empty")
+    }).optional(),
+    sms: z.object({
+      body: z.string().min(1, "SMS body cannot be empty")
+    }).optional(),
+    push: z.object({
+      body: z.string().min(1, "Push body cannot be empty")
+    }).optional()
+  }).optional()
+}).strict();
+
+/**
+ * Validates event type registration payload.
+ * @param {object} data - Event type registration payload
+ * @returns {object} Zod safeParse result
+ */
+function validateCreateEventType(data) {
+  return createEventTypeSchema.safeParse(data);
+}
+
 module.exports = {
   clientEventSchema,
   eventEnvelopeSchema,
   updatePreferencesSchema,
   createTemplateSchema,
   registerUserSchema,
+  createEventTypeSchema,
   validateClientEvent,
   validateEventEnvelope,
   validateUpdatePreferences,
   validateCreateTemplate,
-  validateRegisterUser
+  validateRegisterUser,
+  validateCreateEventType
 };
