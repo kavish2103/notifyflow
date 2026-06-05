@@ -93,9 +93,9 @@ async function logDelivery({ eventId, tenantId, userId, eventType, status, error
 async function deliverSmsEvent(payload) {
   // 1. Verify User Preferences for SMS channel
   const prefServiceUrl = process.env.PREFERENCE_SERVICE_URL || 'http://localhost:3003';
-  logger.info('Checking user preferences for SMS channel...', { 
-    userId: payload.userId, 
-    url: `${prefServiceUrl}/v1/preferences/${payload.userId}` 
+  logger.info('Checking user preferences for SMS channel...', {
+    userId: payload.userId,
+    url: `${prefServiceUrl}/v1/preferences/${payload.userId}`
   });
 
   const prefRes = await fetch(`${prefServiceUrl}/v1/preferences/${payload.userId}`, {
@@ -455,7 +455,7 @@ async function bootstrap() {
           }
 
           const { nextAttemptAt } = payload;
-          
+
           const now = Date.now();
           const targetTime = new Date(nextAttemptAt).getTime();
           const sleepTimeMs = targetTime - now;
