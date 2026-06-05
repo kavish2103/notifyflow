@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const APP_BASE_URL = window.location.origin;
+
 export default function App() {
   const [apiKey, setApiKey] = useState(
     localStorage.getItem('nf_api_key') || 'nf_key_70ac6777c160303a1c3375970e946662b4b07458531eb914'
@@ -109,7 +112,7 @@ export default function App() {
       else if (v === 'amount') newPayload.amount = '49.99';
       else if (v === 'currency') newPayload.currency = 'USD';
       else if (v === 'reason') newPayload.reason = 'Insufficient funds';
-      else if (v === 'billingUrl') newPayload.billingUrl = 'http://localhost:5173/billing';
+      else if (v === 'billingUrl') newPayload.billingUrl = `${APP_BASE_URL}/billing`;
       else if (v === 'invoiceId') newPayload.invoiceId = 'inv-88190';
       else newPayload[v] = '';
     });
@@ -168,14 +171,14 @@ export default function App() {
   const fetchAdminData = async (tokenToUse) => {
     setIsLoading(true);
     try {
-      const tenantsRes = await fetch('http://localhost:3000/v1/admin/tenants', {
+      const tenantsRes = await fetch(`${API_BASE_URL}/v1/admin/tenants`, {
         headers: { 'Authorization': `Bearer ${tokenToUse}` }
       });
       if (!tenantsRes.ok) throw new Error('Failed to fetch tenants');
       const tenantsData = await tenantsRes.json();
       setTenants(tenantsData.tenants);
 
-      const statsRes = await fetch('http://localhost:3000/v1/admin/stats', {
+      const statsRes = await fetch(`${API_BASE_URL}/v1/admin/stats`, {
         headers: { 'Authorization': `Bearer ${tokenToUse}` }
       });
       if (!statsRes.ok) throw new Error('Failed to fetch statistics');
@@ -193,7 +196,7 @@ export default function App() {
   const fetchMetrics = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/v1/analytics/metrics', {
+      const res = await fetch(`${API_BASE_URL}/v1/analytics/metrics`, {
         method: 'GET',
         headers: {
           'x-api-key': apiKey
@@ -218,7 +221,7 @@ export default function App() {
   const fetchEventTypes = async () => {
     if (!isConnected || !apiKey) return;
     try {
-      const res = await fetch('http://localhost:3000/v1/event-types', {
+      const res = await fetch(`${API_BASE_URL}/v1/event-types`, {
         headers: {
           'x-api-key': apiKey
         }
@@ -246,7 +249,7 @@ export default function App() {
     if (!targetUserId || !apiKey) return;
     setIsPrefsLoading(true);
     try {
-      const res = await fetch(`http://localhost:3000/v1/preferences/${targetUserId}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/preferences/${targetUserId}`, {
         headers: {
           'x-api-key': apiKey
         }
@@ -268,7 +271,7 @@ export default function App() {
     if (!emailInput.trim()) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}/email`, {
+      const res = await fetch(`${API_BASE_URL}/v1/preferences/${publisherUserId}/email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -294,7 +297,7 @@ export default function App() {
     if (!phoneInput.trim()) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}/phone`, {
+      const res = await fetch(`${API_BASE_URL}/v1/preferences/${publisherUserId}/phone`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -326,7 +329,7 @@ export default function App() {
     });
 
     try {
-      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/preferences/${publisherUserId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -414,7 +417,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('http://localhost:3000/v1/event-types', {
+      const res = await fetch(`${API_BASE_URL}/v1/event-types`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -441,7 +444,7 @@ export default function App() {
     if (!confirm(`Are you sure you want to delete '${eventTypeToDelete}' and all its associated templates?`)) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/v1/event-types/${eventTypeToDelete}`, {
+      const res = await fetch(`${API_BASE_URL}/v1/event-types/${eventTypeToDelete}`, {
         method: 'DELETE',
         headers: {
           'x-api-key': apiKey
@@ -482,7 +485,7 @@ export default function App() {
 
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/v1/admin/login', {
+      const res = await fetch(`${API_BASE_URL}/v1/admin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: adminPassword.trim() })
@@ -520,7 +523,7 @@ export default function App() {
     if (!newTenantName.trim()) return;
 
     try {
-      const res = await fetch('http://localhost:3000/v1/admin/tenants', {
+      const res = await fetch(`${API_BASE_URL}/v1/admin/tenants`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -584,7 +587,7 @@ export default function App() {
     };
 
     try {
-      const res = await fetch('http://localhost:3000/v1/events', {
+      const res = await fetch(`${API_BASE_URL}/v1/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -662,7 +665,7 @@ export default function App() {
       console.log('Web Push subscription compiled:', subscription);
 
       // 4. Save subscription details in PostgreSQL for user publisherUserId
-      const res = await fetch(`http://localhost:3000/v1/preferences/${publisherUserId}/push-token`, {
+      const res = await fetch(`${API_BASE_URL}/v1/preferences/${publisherUserId}/push-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
