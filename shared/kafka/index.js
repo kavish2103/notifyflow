@@ -69,6 +69,7 @@ function getKafkaClient() {
   const brokersStr = process.env.KAFKA_BROKERS;
   const username = process.env.KAFKA_USERNAME;
   const password = process.env.KAFKA_PASSWORD;
+  const mechanism = process.env.KAFKA_SASL_MECHANISM || 'plain';
   const clientId = process.env.KAFKA_CLIENT_ID || 'notifyflow';
 
   if (!brokersStr) {
@@ -83,18 +84,18 @@ function getKafkaClient() {
     logCreator: winstonLogCreator
   };
 
-  // Upstash managed Kafka setup requires SASL/SSL credentials
+  // SASL/SSL credentials for cloud providers (Upstash/Confluent Cloud)
   if (username && password) {
     config.ssl = true;
     config.sasl = {
-      mechanism: 'scram-sha-256',
+      mechanism,
       username,
       password
     };
   }
 
   kafkaClientInstance = new Kafka(config);
-  logger.info('Kafka client successfully initialized', { brokers, clientId });
+  logger.info('Kafka client successfully initialized', { brokers, clientId, mechanism });
   return kafkaClientInstance;
 }
 
