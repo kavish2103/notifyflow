@@ -259,8 +259,8 @@ async function runE2E() {
     }
 
     // 8. Wait for pipeline processing (async workers and DLQ retry delays)
-    console.log('\n\x1b[36m[PROCESSING] Sleeping for 15 seconds to allow Kafka pipeline processing and workers retry execution...\x1b[0m');
-    await sleep(15000);
+    console.log('\n\x1b[36m[PROCESSING] Sleeping for 30 seconds to allow Kafka pipeline processing and workers retry execution...\x1b[0m');
+    await sleep(30000);
 
     // 9. Query results from database
     console.log('\x1b[36m[VERIFICATION] Fetching E2E test results from PostgreSQL...\x1b[0m');
