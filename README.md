@@ -1,5 +1,11 @@
 # NotifyFlow — Distributed Multi-Tenant B2B Notification Engine
 
+### 🌐 Live Demo & Deployments
+* **Frontend Sandbox Dashboard**: [https://notifyflow-frontend.vercel.app/](https://notifyflow-frontend.vercel.app/)
+* **Backend API Gateway**: [https://notifyflow-backend.onrender.com/health](https://notifyflow-backend.onrender.com/health)
+
+---
+
 NotifyFlow is a highly resilient, fault-tolerant, and high-throughput event-driven B2B notification platform. Engineered using a **decoupled, purified microservices topology**, it handles transactional messaging across **Email, SMS, and Web Push** channels with sub-millisecond ingestion rates, robust retry mechanisms, and real-time performance analytics.
 
 ---
