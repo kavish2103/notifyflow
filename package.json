@@ -12,6 +12,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
+    "start": "pm2-runtime start ecosystem.config.js",
     "bootstrap": "npm install",
     "db:migrate": "node run-migrations.js",
     "db:rollback": "node run-migrations.js down",
@@ -25,7 +26,8 @@
     "dev:frontend": "npm run dev --workspace=frontend"
   },
   "dependencies": {
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "pm2": "^7.0.1"
   },
   "devDependencies": {
     "node-pg-migrate": "^6.2.2",
