@@ -174,8 +174,14 @@ async function bootstrap() {
 
     // 2. Establish connection to Kafka Brokers
     logger.info('Initializing Kafka Producer connection...');
-    kafkaProducer = await getKafkaProducer();
-    logger.info('Kafka connection established successfully.');
+    try {
+      kafkaProducer = await getKafkaProducer();
+      logger.info('Kafka connection established successfully.');
+    } catch (kafkaError) {
+      logger.warn('Failed to establish Kafka producer connection. Service will return 503 for event ingestion.', {
+        error: kafkaError.message
+      });
+    }
 
     // 3. Bind and Boot Express Server
     server = app.listen(PORT, () => {

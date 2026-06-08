@@ -225,38 +225,44 @@ async function bootstrap() {
     await redis.ping();
     logger.info('Redis connection verified successfully.');
 
-    // 3. Kafka client initialization
-    const kafka = getKafkaClient();
+    // 3. Kafka client initialization and subscription setup
+    try {
+      const kafka = getKafkaClient();
 
-    // 4. Initialize Kafka DLQ Monitor Consumer Group
-    kafkaConsumer = kafka.consumer({
-      groupId: CONSUMER_GROUPS.DLQ_MONITOR
-    });
+      // 4. Initialize Kafka DLQ Monitor Consumer Group
+      kafkaConsumer = kafka.consumer({
+        groupId: CONSUMER_GROUPS.DLQ_MONITOR
+      });
 
-    logger.info('Connecting DLQ Monitor Kafka consumer...');
-    await kafkaConsumer.connect();
-    logger.info('Kafka consumer connected successfully.');
+      logger.info('Connecting DLQ Monitor Kafka consumer...');
+      await kafkaConsumer.connect();
+      logger.info('Kafka consumer connected successfully.');
 
-    logger.info(`Subscribing to DLQ stream topic: ${TOPICS.DLQ}...`);
-    await kafkaConsumer.subscribe({
-      topic: TOPICS.DLQ,
-      fromBeginning: false
-    });
+      logger.info(`Subscribing to DLQ stream topic: ${TOPICS.DLQ}...`);
+      await kafkaConsumer.subscribe({
+        topic: TOPICS.DLQ,
+        fromBeginning: false
+      });
 
-    // 5. Start consuming DLQ metrics in real-time
-    logger.info('DLQ Monitor is listening and active.');
-    await kafkaConsumer.run({
-      eachMessage: async ({ topic, partition, message }) => {
-        logger.info('DLQ stream intercept. Incrementing global DLQ depth in Redis...');
-        try {
-          const depthKey = 'dlq:depth';
-          await redis.incr(depthKey);
-          logger.info('Successfully incremented Redis dlq:depth counter', { key: depthKey });
-        } catch (redisErr) {
-          logger.error('Failed to update real-time Redis DLQ depth counter', { error: redisErr.message });
+      // 5. Start consuming DLQ metrics in real-time
+      logger.info('DLQ Monitor is listening and active.');
+      await kafkaConsumer.run({
+        eachMessage: async ({ topic, partition, message }) => {
+          logger.info('DLQ stream intercept. Incrementing global DLQ depth in Redis...');
+          try {
+            const depthKey = 'dlq:depth';
+            await redis.incr(depthKey);
+            logger.info('Successfully incremented Redis dlq:depth counter', { key: depthKey });
+          } catch (redisErr) {
+            logger.error('Failed to update real-time Redis DLQ depth counter', { error: redisErr.message });
+          }
         }
-      }
-    });
+      });
+    } catch (kafkaError) {
+      logger.warn('Failed to initialize Kafka DLQ consumer. DLQ monitoring will be disabled.', {
+        error: kafkaError.message
+      });
+    }
 
     // 6. Start Express HTTP Server
     server = app.listen(PORT, () => {
