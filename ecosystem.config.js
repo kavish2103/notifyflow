@@ -45,6 +45,10 @@ module.exports = {
       error_file: './logs/analytics-consumer-error.log',
       out_file: './logs/analytics-consumer-out.log',
       autorestart: true,
+      // Cap restarts so a Kafka/Redis failure loop doesn't destabilize other services.
+      // On Render, Kafka is unavailable and analytics gracefully degrades to Postgres-only mode.
+      max_restarts: 5,
+      restart_delay: 5000,
       env: {
         NODE_ENV: 'production',
         ANALYTICS_PORT: 3004,

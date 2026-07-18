@@ -83,15 +83,33 @@ app.get('/v1/analytics/metrics', async (req, res) => {
     return res.status(400).json({ error: 'BadRequestError', message: 'Missing x-tenant-id header' });
   }
 
-  const redis = getRedisClient();
   const cacheKey = `metrics:cache:${tenantId}`;
 
+  // Redis is optional — gracefully degrade to direct DB query if unavailable
+  let redis = null;
   try {
-    // 1. Check Redis Cache
-    const cachedData = await redis.get(cacheKey);
-    if (cachedData) {
-      logger.debug('Analytics cache HIT. Returning cached payload.', { tenantId, cacheKey });
-      return res.status(200).json(JSON.parse(cachedData));
+    if (process.env.REDIS_URL) {
+      redis = getRedisClient();
+    } else {
+      logger.debug('REDIS_URL not set, skipping cache layer for this request.');
+    }
+  } catch (redisInitErr) {
+    logger.warn('Redis client unavailable, skipping cache layer.', { error: redisInitErr.message });
+  }
+
+  try {
+    // 1. Check Redis Cache (skip if Redis is unavailable)
+    if (redis) {
+      try {
+        const cachedData = await redis.get(cacheKey);
+        if (cachedData) {
+          logger.debug('Analytics cache HIT. Returning cached payload.', { tenantId, cacheKey });
+          return res.status(200).json(JSON.parse(cachedData));
+        }
+      } catch (cacheReadErr) {
+        logger.warn('Redis cache read failed, falling back to database.', { error: cacheReadErr.message });
+        redis = null; // disable further Redis use for this request
+      }
     }
 
     logger.info('Analytics cache MISS. Executing database aggregates...', { tenantId, cacheKey });
@@ -189,9 +207,15 @@ app.get('/v1/analytics/metrics', async (req, res) => {
       cachedAt: new Date().toISOString()
     };
 
-    // 4. Save to Redis Cache (Cache TTL = 10 seconds)
-    await redis.set(cacheKey, JSON.stringify(metricsPayload), 'EX', 10);
-    logger.info('Aggregated analytics saved in Redis cache successfully.', { tenantId, cacheKey });
+    // 4. Save to Redis Cache (Cache TTL = 10 seconds) — only if Redis is available
+    if (redis) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(metricsPayload), 'EX', 10);
+        logger.info('Aggregated analytics saved in Redis cache successfully.', { tenantId, cacheKey });
+      } catch (cacheWriteErr) {
+        logger.warn('Redis cache write failed, continuing without caching.', { error: cacheWriteErr.message });
+      }
+    }
 
     res.status(200).json(metricsPayload);
 
@@ -220,10 +244,20 @@ async function bootstrap() {
       dbServerTime: dbTimeResult.rows[0].now
     });
 
-    // 2. Redis connector pool verification
-    const redis = getRedisClient();
-    await redis.ping();
-    logger.info('Redis connection verified successfully.');
+    // 2. Redis connector pool verification (optional — degrades gracefully if unavailable)
+    try {
+      if (!process.env.REDIS_URL) {
+        logger.warn('REDIS_URL not set. Analytics cache layer will be disabled (Postgres-only mode).');
+      } else {
+        const redis = getRedisClient();
+        await redis.ping();
+        logger.info('Redis connection verified successfully.');
+      }
+    } catch (redisErr) {
+      logger.warn('Redis connection unavailable. Analytics cache layer will be disabled.', {
+        error: redisErr.message
+      });
+    }
 
     // 3. Kafka client initialization and subscription setup
     try {
