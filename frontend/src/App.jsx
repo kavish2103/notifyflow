@@ -42,6 +42,7 @@ export default function App() {
   const [modalPushBody, setModalPushBody] = useState('');
 
   const [publisherUserId, setPublisherUserId] = useState('user-cust-99');
+  const [recipientEmailOverride, setRecipientEmailOverride] = useState('');
   const [publisherPayload, setPublisherPayload] = useState({});
   const [publisherPayloadCustom, setPublisherPayloadCustom] = useState('{"reason": "Insufficient funds"}');
   const [publisherStatus, setPublisherStatus] = useState(null);
@@ -578,6 +579,12 @@ export default function App() {
       }
     }
 
+    // If recruiter typed an email override, inject it so the email-worker
+    // delivers directly to that address regardless of DB user records
+    if (recipientEmailOverride.trim()) {
+      payloadBody.email = recipientEmailOverride.trim();
+    }
+
     const payload = {
       clientEventId: `client-txn-${Date.now()}`,
       tenantId: metrics.tenantId,
@@ -967,6 +974,39 @@ export default function App() {
                           placeholder="e.g. user-cust-99"
                           required
                         />
+                      </div>
+
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                            color: 'white',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '2px 7px',
+                            borderRadius: '4px',
+                            letterSpacing: '0.5px'
+                          }}>DEMO</span>
+                          Recipient Email Override
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>(delivers notification to this address directly)</span>
+                        </label>
+                        <input
+                          id="recipient-email-override"
+                          type="email"
+                          className="api-key-input"
+                          value={recipientEmailOverride}
+                          onChange={(e) => setRecipientEmailOverride(e.target.value)}
+                          placeholder="Enter your email — receive the notification in your inbox in ~10 seconds"
+                          style={{
+                            borderColor: recipientEmailOverride ? 'var(--accent-primary)' : undefined,
+                            boxShadow: recipientEmailOverride ? '0 0 0 2px rgba(99,102,241,0.15)' : undefined
+                          }}
+                        />
+                        {recipientEmailOverride && (
+                          <span style={{ fontSize: '11px', color: 'var(--accent-success)', fontWeight: 600, marginTop: '4px', display: 'block' }}>
+                            ✓ Notification will be delivered to {recipientEmailOverride}
+                          </span>
+                        )}
                       </div>
 
                       {Object.keys(publisherPayload).map((key) => (
