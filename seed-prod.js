@@ -18,7 +18,7 @@ async function seedProd() {
     const plaintextApiKey = 'demo-api-key-notifyflow-2024';
     const apiKeyHash = crypto.createHash('sha256').update(plaintextApiKey).digest('hex');
 
-    const tenantId = 'tenant-demo-uuid-1111-2222-3333-4444';
+    const tenantId = 'tenant-a1b2c3d4-e5f6-4890-abcd-ef1234567890';
     const tenantName = 'NotifyFlow Demo';
     const rateLimit = 120; // 120 requests/min
 
