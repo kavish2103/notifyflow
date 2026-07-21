@@ -47,9 +47,10 @@ let redisClient = null;
  * enriches payloads with system tracking metadata, and streams onto Kafka.
  */
 app.post('/v1/events', async (req, res) => {
-  // Defensive guard: Reject if service is booting and Redis is not active
-  if (!redisClient) {
+  // Defensive guard: Reject if service is booting and Kafka/Redis is not active
+  if (!kafkaProducer || !redisClient) {
     logger.error('Attempted to ingest event, but downstream dependencies are offline', {
+      kafkaReady: !!kafkaProducer,
       redisReady: !!redisClient
     });
     return res.status(503).json({
@@ -109,41 +110,33 @@ app.post('/v1/events', async (req, res) => {
       payload: clientEvent.payload
     };
 
-    // 4. Stream onto Kafka topic (if Kafka producer is available)
-    if (kafkaProducer) {
-      logger.info('Streaming enriched transaction event onto Kafka topic...', {
-        eventId,
-        eventType: enrichedEvent.eventType,
-        userId: enrichedEvent.userId,
-        correlationId
-      });
+    // 4. Stream onto Kafka topic partitioned by userId to guarantee chronological delivery order
+    logger.info('Streaming enriched transaction event onto Kafka topic...', {
+      eventId,
+      eventType: enrichedEvent.eventType,
+      userId: enrichedEvent.userId,
+      correlationId
+    });
 
-      await kafkaProducer.send({
-        topic: TOPICS.EVENTS,
-        messages: [
-          {
-            key: enrichedEvent.userId,
-            value: JSON.stringify(enrichedEvent),
-            headers: {
-              correlationId: enrichedEvent.correlationId,
-              tenantId: enrichedEvent.tenantId
-            }
+    await kafkaProducer.send({
+      topic: TOPICS.EVENTS,
+      messages: [
+        {
+          key: enrichedEvent.userId, // Guarantees message ordering per user
+          value: JSON.stringify(enrichedEvent),
+          headers: {
+            correlationId: enrichedEvent.correlationId,
+            tenantId: enrichedEvent.tenantId
           }
-        ]
-      });
+        }
+      ]
+    });
 
-      logger.info('Transaction event successfully streamed to Kafka broker', {
-        eventId,
-        clientEventId: enrichedEvent.clientEventId,
-        correlationId
-      });
-    } else {
-      logger.warn('Kafka producer unavailable — event accepted but NOT streamed. No delivery will occur until Kafka is configured.', {
-        eventId,
-        eventType: enrichedEvent.eventType,
-        correlationId
-      });
-    }
+    logger.info('Transaction event successfully streamed to Kafka broker', {
+      eventId,
+      clientEventId: enrichedEvent.clientEventId,
+      correlationId
+    });
 
     // 5. Instantly release the client with HTTP 202 Accepted
     return res.status(202).json({
