@@ -655,7 +655,7 @@ export default function App() {
       console.log('Service Worker is active and ready:', registration);
 
       // 3. Subscribe with the public VAPID key
-      const publicVapidKey = 'BBPV-vkpRNEfuIrlGmxCXXUv86F09uLR4IGjk2wGJYzxQNPhRw0Zp9dMHfqHc5wnpOn03LW_3_SC4HiANX2W0Qg';
+      const publicVapidKey = 'BFRCg15B3yn8SAm0xlenaGbz7Hxk-FwYDInv5kzzHfnXZa0jIbaIDzv2DfuqgCzV7GteZCBg8XMJhUAgHrk6p8U';
       
       // Unsubscribe existing stale subscriptions to guarantee a fresh token from push servers
       const existingSubscription = await registration.pushManager.getSubscription();
